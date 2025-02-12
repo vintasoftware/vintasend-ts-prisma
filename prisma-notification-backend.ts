@@ -4,6 +4,7 @@ import type { InputJsonValue, JsonValue } from 'vintasend/src/types/json-values'
 import type { Notification, NotificationInput } from 'vintasend/src/types/notification';
 import type { NotificationStatus } from 'vintasend/src/types/notification-status';
 import type { NotificationType } from 'vintasend/src/types/notification-type';
+import type { Identifier } from 'vintasend/src/types/identifier';
 
 export const NotificationStatusEnum = {
   PENDING_SEND: 'PENDING_SEND',
@@ -145,8 +146,8 @@ function convertJsonValueToRecord(jsonValue: JsonValue): Record<string, string |
 export class PrismaNotificationBackend<
   Client extends NotificationPrismaClientInterface<NotificationIdType, UserIdType>,
   AvailableContexts extends Record<string, ContextGenerator>,
-  NotificationIdType extends string | number,
-  UserIdType extends string | number,
+  NotificationIdType extends Identifier = Identifier,
+  UserIdType extends Identifier = Identifier,
 > implements BaseNotificationBackend<AvailableContexts>
 {
   constructor(private prismaClient: Client) {}
