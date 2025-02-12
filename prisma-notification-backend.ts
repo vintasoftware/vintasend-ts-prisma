@@ -148,7 +148,7 @@ export class PrismaNotificationBackend<
   AvailableContexts extends Record<string, ContextGenerator>,
   NotificationIdType extends Identifier = Identifier,
   UserIdType extends Identifier = Identifier,
-> implements BaseNotificationBackend<AvailableContexts>
+> implements BaseNotificationBackend<AvailableContexts, NotificationIdType, UserIdType>
 {
   constructor(private prismaClient: Client) {}
 
