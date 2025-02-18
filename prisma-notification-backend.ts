@@ -431,8 +431,7 @@ export class PrismaNotificationBackend<
     notificationId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
-    // biome-ignore lint/correctness/noUnusedVariables: <explanation>
-    forUpdate: boolean,
+    _forUpdate: boolean,
   ): Promise<Notification<AvailableContexts, NotificationIdType, UserIdType> | null> {
     const notification = await this.prismaClient.notification.findUnique({
       where: {
