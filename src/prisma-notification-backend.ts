@@ -1,10 +1,10 @@
-import type { BaseNotificationBackend } from 'vintasend/src/services/notification-backends/base-notification-backend';
-import type { ContextGenerator } from 'vintasend/src/services/notification-context-registry';
-import type { InputJsonValue, JsonValue } from 'vintasend/src/types/json-values';
-import type { Notification, NotificationInput } from 'vintasend/src/types/notification';
-import type { NotificationStatus } from 'vintasend/src/types/notification-status';
-import type { NotificationType } from 'vintasend/src/types/notification-type';
-import type { Identifier } from 'vintasend/src/types/identifier';
+import type { BaseNotificationBackend } from 'vintasend/dist/services/notification-backends/base-notification-backend';
+import type { ContextGenerator } from 'vintasend/dist/services/notification-context-registry';
+import type { InputJsonValue, JsonValue } from 'vintasend/dist/types/json-values';
+import type { Notification, NotificationInput } from 'vintasend/dist/types/notification';
+import type { NotificationStatus } from 'vintasend/dist/types/notification-status';
+import type { NotificationType } from 'vintasend/dist/types/notification-type';
+import type { Identifier } from 'vintasend/dist/types/identifier';
 
 export const NotificationStatusEnum = {
   PENDING_SEND: 'PENDING_SEND',
