@@ -1,17 +1,23 @@
 {
   "name": "vintasend-prisma",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "VintaSend Backend implementation for Prisma",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "generate-prisma-client": "prisma generate"
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
   },
-  "author": "",
-  "license": "ISC",
+  "files": [
+    "dist"
+  ],
+  "author": "Hugo Bessa",
+  "license": "MIT",
   "dependencies": {
     "@prisma/client": "^6.3.1",
     "prisma": "^6.3.1",
     "vintasend": "^0.1.4"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.2"
   }
 }
