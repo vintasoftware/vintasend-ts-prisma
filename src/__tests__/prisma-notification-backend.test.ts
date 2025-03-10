@@ -12,10 +12,8 @@ type TestContexts = {
 describe('PrismaNotificationBackend', () => {
   let mockPrismaClient: jest.Mocked<NotificationPrismaClientInterface<string, string>>;
   let backend: PrismaNotificationBackend<
-    typeof mockPrismaClient,
-    TestContexts,
-    string,
-    string
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    typeof mockPrismaClient, any
   >;
 
   beforeEach(() => {
@@ -110,7 +108,7 @@ describe('PrismaNotificationBackend', () => {
   describe('markPendingAsSent', () => {
     it('should mark a notification as sent', async () => {
       // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-      const sentNotification: DatabaseNotification<any, any, any> = {
+      const sentNotification: DatabaseNotification<any> = {
         ...mockNotification,
         status: NotificationStatusEnum.SENT,
         sentAt: new Date(),
@@ -120,7 +118,8 @@ describe('PrismaNotificationBackend', () => {
 
       updateMock.mockResolvedValue(sentNotification);
 
-      const result: DatabaseNotification<TestContexts, string, string> = await backend.markPendingAsSent('1');
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      const result: DatabaseNotification<any> = await backend.markPendingAsSent('1');
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
         where: { id: '1' },
@@ -553,7 +552,8 @@ describe('PrismaNotificationBackend', () => {
       });
       // Verify the type casting worked by checking if it matches TestContexts type
       expect(result.contextName).toBe('testContext');
-      expect(typeof result.contextParameters.param1).toBe('string');
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      expect(typeof (result.contextParameters as any).param1).toBe('string');
     });
   });
 

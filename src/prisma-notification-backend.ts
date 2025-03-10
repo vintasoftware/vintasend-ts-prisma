@@ -1,10 +1,9 @@
 import type { BaseNotificationBackend } from 'vintasend/dist/services/notification-backends/base-notification-backend';
-import type { ContextGenerator } from 'vintasend/dist/services/notification-context-registry';
 import type { InputJsonValue, JsonValue } from 'vintasend/dist/types/json-values';
 import type { DatabaseNotification, Notification, NotificationInput } from 'vintasend/dist/types/notification';
 import type { NotificationStatus } from 'vintasend/dist/types/notification-status';
 import type { NotificationType } from 'vintasend/dist/types/notification-type';
-import type { Identifier } from 'vintasend/dist/types/identifier';
+import type { BaseNotificationTypeConfig } from 'vintasend/dist/types/notification-type-config';
 
 export const NotificationStatusEnum = {
   PENDING_SEND: 'PENDING_SEND',
@@ -144,11 +143,9 @@ function convertJsonValueToRecord(jsonValue: JsonValue): Record<string, string |
 }
 
 export class PrismaNotificationBackend<
-  Client extends NotificationPrismaClientInterface<NotificationIdType, UserIdType>,
-  AvailableContexts extends Record<string, ContextGenerator>,
-  NotificationIdType extends Identifier = Identifier,
-  UserIdType extends Identifier = Identifier,
-> implements BaseNotificationBackend<AvailableContexts, NotificationIdType, UserIdType>
+  Client extends NotificationPrismaClientInterface<Config['NotificationIdType'], Config['UserIdType']>,
+  Config extends BaseNotificationTypeConfig
+> implements BaseNotificationBackend<Config>
 {
   constructor(private prismaClient: Client) {}
 
@@ -156,24 +153,24 @@ export class PrismaNotificationBackend<
     notification: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >,
-  ): DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType> {
+  ): DatabaseNotification<Config> {
     return {
       id: notification.id,
       userId: notification.userId,
       notificationType: notification.notificationType,
       title: notification.title,
       bodyTemplate: notification.bodyTemplate,
-      contextName: notification.contextName as keyof AvailableContexts,
+      contextName: notification.contextName as keyof Config['ContextMap'],
       contextParameters: notification.contextParameters
         ? (notification.contextParameters as Parameters<
-            AvailableContexts[keyof AvailableContexts]['generate']
+            Config['ContextMap'][keyof Config['ContextMap']]['generate']
           >[0])
         : {},
       sendAfter: notification.sendAfter,
       subjectTemplate: notification.subjectTemplate,
       status: notification.status,
       contextUsed: notification.contextUsed as ReturnType<
-        AvailableContexts[keyof AvailableContexts]['generate']
+        Config['ContextMap'][keyof Config['ContextMap']]['generate']
       > | null,
       extraParams: notification.extraParams
         ? convertJsonValueToRecord(notification.extraParams)
@@ -187,8 +184,8 @@ export class PrismaNotificationBackend<
   }
 
   deserializeNotification(
-    notification: NotificationInput<AvailableContexts, UserIdType>,
-  ): BaseNotificationCreateInput<UserIdType> {
+    notification: NotificationInput<Config>,
+  ): BaseNotificationCreateInput<Config['UserIdType']> {
     return {
       user: {
         connect: {
@@ -207,7 +204,7 @@ export class PrismaNotificationBackend<
   }
 
   deserializeNotificationForUpdate(
-    notification: Partial<Notification<AvailableContexts, NotificationIdType, UserIdType>>,
+    notification: Partial<Notification<Config>>,
   ): Partial<Parameters<typeof this.prismaClient.notification.update>[0]['data']> {
     return {
       ...(notification.userId ? { user: { connect: { id: notification.userId } } } : {}),
@@ -232,7 +229,7 @@ export class PrismaNotificationBackend<
   }
 
   async getAllPendingNotifications(): Promise<
-    DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType>[]
+    DatabaseNotification<Config>[]
   > {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
@@ -244,7 +241,7 @@ export class PrismaNotificationBackend<
   }
 
   async getPendingNotifications(): Promise<
-  DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType>[]
+  DatabaseNotification<Config>[]
   > {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
@@ -257,7 +254,7 @@ export class PrismaNotificationBackend<
   }
 
   async getAllFutureNotifications(): Promise<
-  DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType>[]
+  DatabaseNotification<Config>[]
   > {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
@@ -274,7 +271,7 @@ export class PrismaNotificationBackend<
   }
 
   async getFutureNotifications(): Promise<
-  DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType>[]
+  DatabaseNotification<Config>[]
   > {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
@@ -294,7 +291,7 @@ export class PrismaNotificationBackend<
     userId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['userId'],
-  ): Promise<DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType>[]> {
+  ): Promise<DatabaseNotification<Config>[]> {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         userId,
@@ -314,7 +311,7 @@ export class PrismaNotificationBackend<
     userId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['userId'],
-  ): Promise<DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType>[]> {
+  ): Promise<DatabaseNotification<Config>[]> {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         userId,
@@ -331,8 +328,8 @@ export class PrismaNotificationBackend<
   }
 
   async persistNotification(
-    notification: NotificationInput<AvailableContexts, UserIdType>,
-  ): Promise<DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType>> {
+    notification: NotificationInput<Config>,
+  ): Promise<DatabaseNotification<Config>> {
     return this.serializeNotification(
       await this.prismaClient.notification.create({
         data: this.deserializeNotification(notification),
@@ -345,9 +342,9 @@ export class PrismaNotificationBackend<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
     notification: Partial<
-      Omit<DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType>, 'id'>
+      Omit<DatabaseNotification<Config>, 'id'>
     >,
-  ): Promise<DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType>> {
+  ): Promise<DatabaseNotification<Config>> {
     return this.serializeNotification(
       await this.prismaClient.notification.update({
         where: {
@@ -362,7 +359,7 @@ export class PrismaNotificationBackend<
     notificationId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
-  ): Promise<DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType>> {
+  ): Promise<DatabaseNotification<Config>> {
     return this.serializeNotification(
       await this.prismaClient.notification.update({
         where: {
@@ -380,7 +377,7 @@ export class PrismaNotificationBackend<
     notificationId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
-  ): Promise<DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType>> {
+  ): Promise<DatabaseNotification<Config>> {
     return this.serializeNotification(
       await this.prismaClient.notification.update({
         where: {
@@ -398,7 +395,7 @@ export class PrismaNotificationBackend<
     notificationId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
-  ): Promise<DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType>> {
+  ): Promise<DatabaseNotification<Config>> {
     return this.serializeNotification(
       await this.prismaClient.notification.update({
         where: {
@@ -432,7 +429,7 @@ export class PrismaNotificationBackend<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
     _forUpdate: boolean,
-  ): Promise<DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType> | null> {
+  ): Promise<DatabaseNotification<Config> | null> {
     const notification = await this.prismaClient.notification.findUnique({
       where: {
         id: notificationId,
@@ -449,7 +446,7 @@ export class PrismaNotificationBackend<
     userId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['userId'],
-  ): Promise<DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType>[]> {
+  ): Promise<DatabaseNotification<Config>[]> {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         userId,
@@ -467,7 +464,7 @@ export class PrismaNotificationBackend<
     >['userId'],
     page: number,
     pageSize: number,
-  ): Promise<DatabaseNotification<AvailableContexts, NotificationIdType, UserIdType>[]> {
+  ): Promise<DatabaseNotification<Config>[]> {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         userId,
