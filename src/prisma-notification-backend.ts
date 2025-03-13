@@ -78,10 +78,10 @@ type NoExpand<T> = T extends unknown ? T : never;
 // this type assumes the passed object is entirely optional
 type AtLeast<O extends object, K extends string> = NoExpand<
   O extends unknown
-    ?
-        | (K extends keyof O ? { [P in K]: O[P] } & O : O)
-        | ({ [P in keyof O as P extends K ? K : never]-?: O[P] } & O)
-    : never
+  ?
+  | (K extends keyof O ? { [P in K]: O[P] } & O : O)
+  | ({ [P in keyof O as P extends K ? K : never]-?: O[P] } & O)
+  : never
 >;
 
 export interface BaseNotificationCreateInput<UserIdType> {
@@ -145,9 +145,8 @@ function convertJsonValueToRecord(jsonValue: JsonValue): Record<string, string |
 export class PrismaNotificationBackend<
   Client extends NotificationPrismaClientInterface<Config['NotificationIdType'], Config['UserIdType']>,
   Config extends BaseNotificationTypeConfig
-> implements BaseNotificationBackend<Config>
-{
-  constructor(private prismaClient: Client) {}
+> implements BaseNotificationBackend<Config> {
+  constructor(private prismaClient: Client) { }
 
   serializeNotification(
     notification: NonNullable<
@@ -160,18 +159,20 @@ export class PrismaNotificationBackend<
       notificationType: notification.notificationType,
       title: notification.title,
       bodyTemplate: notification.bodyTemplate,
-      contextName: notification.contextName as keyof Config['ContextMap'],
+      contextName: notification.contextName,
       contextParameters: notification.contextParameters
         ? (notification.contextParameters as Parameters<
-            Config['ContextMap'][keyof Config['ContextMap']]['generate']
-          >[0])
+          Config['ContextMap'][keyof Config['ContextMap']]['generate']
+        >[0])
         : {},
       sendAfter: notification.sendAfter,
       subjectTemplate: notification.subjectTemplate,
       status: notification.status,
       contextUsed: notification.contextUsed as ReturnType<
-        Config['ContextMap'][keyof Config['ContextMap']]['generate']
-      > | null,
+          Config['ContextMap'][keyof Config['ContextMap']]['generate']
+        > extends Promise<infer T> ? T : ReturnType<
+          Config['ContextMap'][keyof Config['ContextMap']]['generate']
+        >,
       extraParams: notification.extraParams
         ? convertJsonValueToRecord(notification.extraParams)
         : null,
@@ -210,18 +211,18 @@ export class PrismaNotificationBackend<
       ...(notification.userId ? { user: { connect: { id: notification.userId } } } : {}),
       ...(notification.notificationType
         ? {
-            notificationType: NotificationTypeEnum[
-              notification.notificationType as keyof typeof NotificationTypeEnum
-            ] as NotificationType,
-          }
+          notificationType: NotificationTypeEnum[
+            notification.notificationType as keyof typeof NotificationTypeEnum
+          ] as NotificationType,
+        }
         : {}),
       ...(notification.title ? { title: notification.title } : {}),
       ...(notification.bodyTemplate ? { bodyTemplate: notification.bodyTemplate } : {}),
       ...(notification.contextName ? { contextName: notification.contextName } : {}),
       ...(notification.contextParameters
         ? {
-            contextParameters: notification.contextParameters ? notification.contextParameters : {},
-          }
+          contextParameters: notification.contextParameters ? notification.contextParameters : {},
+        }
         : {}),
       ...(notification.sendAfter ? { sendAfter: notification.sendAfter } : {}),
       ...(notification.subjectTemplate ? { subjectTemplate: notification.subjectTemplate } : {}),
@@ -241,7 +242,7 @@ export class PrismaNotificationBackend<
   }
 
   async getPendingNotifications(): Promise<
-  DatabaseNotification<Config>[]
+    DatabaseNotification<Config>[]
   > {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
@@ -254,7 +255,7 @@ export class PrismaNotificationBackend<
   }
 
   async getAllFutureNotifications(): Promise<
-  DatabaseNotification<Config>[]
+    DatabaseNotification<Config>[]
   > {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
@@ -271,7 +272,7 @@ export class PrismaNotificationBackend<
   }
 
   async getFutureNotifications(): Promise<
-  DatabaseNotification<Config>[]
+    DatabaseNotification<Config>[]
   > {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
@@ -355,15 +356,17 @@ export class PrismaNotificationBackend<
     );
   }
 
-  async markPendingAsSent(
+  async markAsSent(
     notificationId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
+    checkIsPending = true,
   ): Promise<DatabaseNotification<Config>> {
     return this.serializeNotification(
       await this.prismaClient.notification.update({
         where: {
           id: notificationId,
+          ...(checkIsPending ? { status: NotificationStatusEnum.PENDING_SEND } : {}),
         },
         data: {
           status: NotificationStatusEnum.SENT,
@@ -373,15 +376,17 @@ export class PrismaNotificationBackend<
     );
   }
 
-  async markPendingAsFailed(
+  async markAsFailed(
     notificationId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
+    checkIsPending = true,
   ): Promise<DatabaseNotification<Config>> {
     return this.serializeNotification(
       await this.prismaClient.notification.update({
         where: {
           id: notificationId,
+          ...(checkIsPending ? { status: NotificationStatusEnum.PENDING_SEND } : {}),
         },
         data: {
           status: NotificationStatusEnum.FAILED,
@@ -391,15 +396,17 @@ export class PrismaNotificationBackend<
     );
   }
 
-  async markSentAsRead(
+  async markAsRead(
     notificationId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
+    checkIsSent = true,
   ): Promise<DatabaseNotification<Config>> {
     return this.serializeNotification(
       await this.prismaClient.notification.update({
         where: {
           id: notificationId,
+          ...(checkIsSent ? { status: NotificationStatusEnum.SENT } : {}),
         },
         data: {
           status: 'READ',
@@ -509,5 +516,15 @@ export class PrismaNotificationBackend<
         contextUsed: context,
       },
     });
+  }
+}
+
+export class PrismaNotificationBackendFactory<
+  Config extends BaseNotificationTypeConfig
+> {
+  create<Client extends NotificationPrismaClientInterface<Config['NotificationIdType'], Config['UserIdType']>>(
+    prismaClient: Client,
+  ) {
+    return new PrismaNotificationBackend<Client, Config>(prismaClient);
   }
 }
