@@ -1,6 +1,6 @@
-import { PrismaNotificationBackend } from '../index';
+import { PrismaNotificationBackendFactory } from '../index';
 import { NotificationStatusEnum, NotificationTypeEnum } from '../prisma-notification-backend';
-import type { NotificationPrismaClientInterface } from '../prisma-notification-backend';
+import type { NotificationPrismaClientInterface, PrismaNotificationBackend } from '../prisma-notification-backend';
 import type { DatabaseNotification } from 'vintasend/dist/types/notification';
 
 type TestContexts = {
@@ -26,7 +26,7 @@ describe('PrismaNotificationBackend', () => {
       },
     };
 
-    backend = new PrismaNotificationBackend(mockPrismaClient);
+    backend = new PrismaNotificationBackendFactory().create(mockPrismaClient);
   });
 
   const mockNotification = {
@@ -105,7 +105,7 @@ describe('PrismaNotificationBackend', () => {
     });
   });
 
-  describe('markPendingAsSent', () => {
+  describe('markAsSent', () => {
     it('should mark a notification as sent', async () => {
       // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       const sentNotification: DatabaseNotification<any> = {
@@ -119,10 +119,41 @@ describe('PrismaNotificationBackend', () => {
       updateMock.mockResolvedValue(sentNotification);
 
       // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-      const result: DatabaseNotification<any> = await backend.markPendingAsSent('1');
+      const result: DatabaseNotification<any> = await backend.markAsSent('1');
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
-        where: { id: '1' },
+        where: { 
+          id: '1',
+          "status": NotificationStatusEnum.PENDING_SEND,
+        },
+        data: {
+          status: NotificationStatusEnum.SENT,
+          sentAt: expect.any(Date),
+        },
+      });
+      expect(result.status).toBe(NotificationStatusEnum.SENT);
+      expect(result.sentAt).toBeDefined();
+    });
+
+    it('should skip pending send status chack if checkIsPending is false', async () => {
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      const sentNotification: DatabaseNotification<any> = {
+        ...mockNotification,
+        status: NotificationStatusEnum.SENT,
+        sentAt: new Date(),
+      };
+
+      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+
+      updateMock.mockResolvedValue(sentNotification);
+
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      const result: DatabaseNotification<any> = await backend.markAsSent('1', false);
+
+      expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
+        where: { 
+          id: '1',
+        },
         data: {
           status: NotificationStatusEnum.SENT,
           sentAt: expect.any(Date),
@@ -133,7 +164,7 @@ describe('PrismaNotificationBackend', () => {
     });
   });
 
-  describe('markSentAsRead', () => {
+  describe('markAsRead', () => {
     it('should mark a notification as read', async () => {
       const readNotification = {
         ...mockNotification,
@@ -144,10 +175,38 @@ describe('PrismaNotificationBackend', () => {
       const updateMock = mockPrismaClient.notification.update as jest.Mock;
       updateMock.mockResolvedValue(readNotification);
 
-      const result = await backend.markSentAsRead('1');
+      const result = await backend.markAsRead('1');
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
-        where: { id: '1' },
+        where: { 
+          id: '1',
+          "status": NotificationStatusEnum.SENT, 
+        },
+        data: {
+          status: NotificationStatusEnum.READ,
+          readAt: expect.any(Date),
+        },
+      });
+      expect(result?.status).toBe(NotificationStatusEnum.READ);
+      expect(result?.readAt).toBeDefined();
+    });
+
+    it('should skip sent status check if checkIsSent is false', async () => {
+      const readNotification = {
+        ...mockNotification,
+        status: NotificationStatusEnum.READ,
+        readAt: new Date(),
+      };
+
+      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      updateMock.mockResolvedValue(readNotification);
+
+      const result = await backend.markAsRead('1', false);
+
+      expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
+        where: { 
+          id: '1',
+        },
         data: {
           status: NotificationStatusEnum.READ,
           readAt: expect.any(Date),
@@ -242,7 +301,7 @@ describe('PrismaNotificationBackend', () => {
     });
   });
 
-  describe('markPendingAsFailed', () => {
+  describe('markAsFailed', () => {
     it('should mark a notification as failed', async () => {
       const failedNotification = {
         ...mockNotification,
@@ -253,10 +312,38 @@ describe('PrismaNotificationBackend', () => {
       const updateMock = mockPrismaClient.notification.update as jest.Mock;
       updateMock.mockResolvedValue(failedNotification);
 
-      const result = await backend.markPendingAsFailed('1');
+      const result = await backend.markAsFailed('1');
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
-        where: { id: '1' },
+        where: { 
+          id: '1',
+          "status": NotificationStatusEnum.PENDING_SEND, 
+        },
+        data: {
+          status: NotificationStatusEnum.FAILED,
+          sentAt: expect.any(Date),
+        },
+      });
+      expect(result.status).toBe(NotificationStatusEnum.FAILED);
+      expect(result.sentAt).toBeDefined();
+    });
+    
+    it('should skip pending send status chack if checkIsPending is false', async () => {
+      const failedNotification = {
+        ...mockNotification,
+        status: NotificationStatusEnum.FAILED,
+        sentAt: new Date(),
+      };
+
+      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      updateMock.mockResolvedValue(failedNotification);
+
+      const result = await backend.markAsFailed('1', false);
+
+      expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
+        where: { 
+          id: '1',
+        },
         data: {
           status: NotificationStatusEnum.FAILED,
           sentAt: expect.any(Date),
