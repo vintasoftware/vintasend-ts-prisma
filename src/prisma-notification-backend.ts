@@ -60,6 +60,9 @@ export interface NotificationPrismaClientInterface<NotificationIdType, UserIdTyp
       data: BaseNotificationCreateInput<UserIdType>;
       include?: { user?: boolean };
     }): Promise<PrismaNotificationModel<NotificationIdType, UserIdType>>;
+    createMany(args: {
+      data: BaseNotificationCreateInput<UserIdType>[];
+    }): Promise<NotificationIdType[]>;
     update(args: {
       where: { id: NotificationIdType };
       data: Partial<BaseNotificationUpdateInput<UserIdType>>;
@@ -312,6 +315,8 @@ export class PrismaNotificationBackend<
     userId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['userId'],
+    page: number,
+    pageSize: number,
   ): Promise<DatabaseNotification<Config>[]> {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
@@ -323,6 +328,25 @@ export class PrismaNotificationBackend<
           lte: new Date(),
         },
       },
+      skip: page * pageSize,
+      take: pageSize,
+    });
+
+    return notifications.map(this.serializeNotification);
+  }
+
+  async getAllNotifications(): Promise<DatabaseNotification<Config>[]> {
+    const notifications = await this.prismaClient.notification.findMany({});
+    return notifications.map(this.serializeNotification);
+  }
+
+  async getNotifications(
+    page: number,
+    pageSize: number,
+  ): Promise<DatabaseNotification<Config>[]> {
+    const notifications = await this.prismaClient.notification.findMany({
+      skip: page * pageSize,
+      take: pageSize,
     });
 
     return notifications.map(this.serializeNotification);
@@ -515,6 +539,16 @@ export class PrismaNotificationBackend<
       data: {
         contextUsed: context,
       },
+    });
+  }
+
+  async bulkPersistNotifications(
+    notifications: Omit<Notification<Config>, 'id'>[],
+  ): Promise<Config['NotificationIdType'][]> {
+    return this.prismaClient.notification.createMany({
+      data: notifications.map((notification) =>
+        this.deserializeNotification(notification),
+      ),
     });
   }
 }
