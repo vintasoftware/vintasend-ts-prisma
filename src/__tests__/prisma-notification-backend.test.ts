@@ -1,7 +1,7 @@
 import { PrismaNotificationBackendFactory } from '../index';
 import { NotificationStatusEnum, NotificationTypeEnum } from '../prisma-notification-backend';
 import type { NotificationPrismaClientInterface, PrismaNotificationBackend } from '../prisma-notification-backend';
-import type { DatabaseNotification } from 'vintasend/dist/types/notification';
+import type { DatabaseNotification, AnyDatabaseNotification } from 'vintasend/dist/types/notification';
 
 type TestContexts = {
   testContext: {
@@ -21,6 +21,7 @@ describe('PrismaNotificationBackend', () => {
       notification: {
         findMany: jest.fn(),
         create: jest.fn(),
+        createMany: jest.fn(),
         update: jest.fn(),
         findUnique: jest.fn(),
       },
@@ -32,6 +33,9 @@ describe('PrismaNotificationBackend', () => {
   const mockNotification = {
     id: '1',
     userId: 'user1',
+    emailOrPhone: null,
+    firstName: null,
+    lastName: null,
     notificationType: NotificationTypeEnum.EMAIL,
     title: 'Test Title',
     bodyTemplate: 'Test Body',
@@ -119,10 +123,10 @@ describe('PrismaNotificationBackend', () => {
       updateMock.mockResolvedValue(sentNotification);
 
       // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-      const result: DatabaseNotification<any> = await backend.markAsSent('1');
+      const result: AnyDatabaseNotification<any> = await backend.markAsSent('1');
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
-        where: { 
+        where: {
           id: '1',
           "status": NotificationStatusEnum.PENDING_SEND,
         },
@@ -148,10 +152,10 @@ describe('PrismaNotificationBackend', () => {
       updateMock.mockResolvedValue(sentNotification);
 
       // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-      const result: DatabaseNotification<any> = await backend.markAsSent('1', false);
+      const result: AnyDatabaseNotification<any> = await backend.markAsSent('1', false);
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
-        where: { 
+        where: {
           id: '1',
         },
         data: {
@@ -178,9 +182,9 @@ describe('PrismaNotificationBackend', () => {
       const result = await backend.markAsRead('1');
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
-        where: { 
+        where: {
           id: '1',
-          "status": NotificationStatusEnum.SENT, 
+          "status": NotificationStatusEnum.SENT,
         },
         data: {
           status: NotificationStatusEnum.READ,
@@ -204,7 +208,7 @@ describe('PrismaNotificationBackend', () => {
       const result = await backend.markAsRead('1', false);
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
-        where: { 
+        where: {
           id: '1',
         },
         data: {
@@ -271,6 +275,8 @@ describe('PrismaNotificationBackend', () => {
           status: NotificationStatusEnum.PENDING_SEND,
           sendAfter: null,
         },
+        skip: 0,
+        take: 100,
       });
       expect(result).toHaveLength(1);
       expect(result[0]).toMatchObject({
@@ -315,9 +321,9 @@ describe('PrismaNotificationBackend', () => {
       const result = await backend.markAsFailed('1');
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
-        where: { 
+        where: {
           id: '1',
-          "status": NotificationStatusEnum.PENDING_SEND, 
+          "status": NotificationStatusEnum.PENDING_SEND,
         },
         data: {
           status: NotificationStatusEnum.FAILED,
@@ -327,7 +333,7 @@ describe('PrismaNotificationBackend', () => {
       expect(result.status).toBe(NotificationStatusEnum.FAILED);
       expect(result.sentAt).toBeDefined();
     });
-    
+
     it('should skip pending send status chack if checkIsPending is false', async () => {
       const failedNotification = {
         ...mockNotification,
@@ -341,7 +347,7 @@ describe('PrismaNotificationBackend', () => {
       const result = await backend.markAsFailed('1', false);
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
-        where: { 
+        where: {
           id: '1',
         },
         data: {
@@ -465,7 +471,7 @@ describe('PrismaNotificationBackend', () => {
       const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
-      const result = await backend.getFutureNotificationsFromUser('user1');
+      const result = await backend.getFutureNotificationsFromUser('user1', 0, 10);
 
       expect(mockPrismaClient.notification.findMany).toHaveBeenCalledWith({
         where: {
@@ -477,6 +483,8 @@ describe('PrismaNotificationBackend', () => {
             lte: expect.any(Date),
           },
         },
+        skip: 0,
+        take: 10,
       });
       expect(result).toHaveLength(1);
     });
@@ -581,6 +589,9 @@ describe('PrismaNotificationBackend', () => {
     it('should correctly serialize notification with all fields', () => {
       const fullNotification = {
         ...mockNotification,
+        emailOrPhone: null,
+        firstName: null,
+        lastName: null,
         contextUsed: { generatedValue: 'test' },
         extraParams: { param1: 'value1', param2: true, param3: 42 },
       };
@@ -588,17 +599,32 @@ describe('PrismaNotificationBackend', () => {
       const result = backend.serializeNotification(fullNotification);
 
       expect(result).toEqual({
-        ...fullNotification,
+        id: fullNotification.id,
+        userId: fullNotification.userId,
+        notificationType: fullNotification.notificationType,
+        title: fullNotification.title,
+        bodyTemplate: fullNotification.bodyTemplate,
         contextName: fullNotification.contextName as keyof TestContexts,
         contextParameters: fullNotification.contextParameters,
+        sendAfter: fullNotification.sendAfter,
+        subjectTemplate: fullNotification.subjectTemplate,
+        status: fullNotification.status,
         contextUsed: fullNotification.contextUsed,
         extraParams: fullNotification.extraParams,
+        adapterUsed: fullNotification.adapterUsed,
+        sentAt: fullNotification.sentAt,
+        readAt: fullNotification.readAt,
+        createdAt: fullNotification.createdAt,
+        updatedAt: fullNotification.updatedAt,
       });
     });
 
     it('should handle null values in optional fields', () => {
       const nullFieldsNotification = {
         ...mockNotification,
+        emailOrPhone: null,
+        firstName: null,
+        lastName: null,
         contextUsed: null,
         extraParams: null,
       };
@@ -612,6 +638,9 @@ describe('PrismaNotificationBackend', () => {
     it('should handle empty contextParameters', () => {
       const notificationWithEmptyContext = {
         ...mockNotification,
+        emailOrPhone: null,
+        firstName: null,
+        lastName: null,
         contextParameters: {},
       };
 
@@ -623,6 +652,9 @@ describe('PrismaNotificationBackend', () => {
     it('should properly cast contextParameters to the correct type', () => {
       const notificationWithComplexContext = {
         ...mockNotification,
+        emailOrPhone: null,
+        firstName: null,
+        lastName: null,
         contextParameters: {
           param1: 'test value',
           param2: 123,
@@ -698,6 +730,8 @@ describe('PrismaNotificationBackend', () => {
             lte: expect.any(Date),
           },
         },
+        skip: 0,
+        take: 100,
       });
       expect(result).toHaveLength(1);
       expect(result[0].sendAfter).toBeDefined();
@@ -719,6 +753,8 @@ describe('PrismaNotificationBackend', () => {
             lte: expect.any(Date),
           },
         },
+        skip: 0,
+        take: 100,
       });
       expect(result).toHaveLength(0);
     });

@@ -1,6 +1,7 @@
-import type { BaseNotificationBackend } from 'vintasend/dist/services/notification-backends/base-notification-backend';
+import type { BaseNotificationBackend } from '../../../services/notification-backends/base-notification-backend';
 import type { InputJsonValue, JsonValue } from 'vintasend/dist/types/json-values';
 import type { DatabaseNotification, Notification, NotificationInput } from 'vintasend/dist/types/notification';
+import type { DatabaseOneOffNotification, OneOffNotificationInput, AnyDatabaseNotification } from '../../../types/notification';
 import type { NotificationStatus } from 'vintasend/dist/types/notification-status';
 import type { NotificationType } from 'vintasend/dist/types/notification-type';
 import type { BaseNotificationTypeConfig } from 'vintasend/dist/types/notification-type-config';
@@ -22,7 +23,12 @@ export const NotificationTypeEnum = {
 
 export interface PrismaNotificationModel<IdType, UserId> {
   id: IdType;
-  userId: UserId;
+  userId: UserId | null;
+  // One-off notification fields (optional)
+  emailOrPhone: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  // Common fields
   notificationType: NotificationType;
   title: string | null;
   bodyTemplate: string;
@@ -49,8 +55,9 @@ export interface NotificationPrismaClientInterface<NotificationIdType, UserIdTyp
       where?: {
         status?: NotificationStatus | { not: NotificationStatus };
         sendAfter?: { lte: Date } | null;
-        userId?: UserIdType;
+        userId?: UserIdType | null;
         readAt?: null;
+        emailOrPhone?: string | { not: null };
       };
       skip?: number;
       take?: number;
@@ -88,7 +95,8 @@ type AtLeast<O extends object, K extends string> = NoExpand<
 >;
 
 export interface BaseNotificationCreateInput<UserIdType> {
-  user: {
+  // Regular notification (with user) - make user optional for one-off notifications
+  user?: {
     connect?: AtLeast<
       {
         id?: UserIdType;
@@ -97,6 +105,12 @@ export interface BaseNotificationCreateInput<UserIdType> {
       'id' | 'email'
     >;
   };
+  userId?: UserIdType | null; // Allow explicitly setting userId to null for one-off notifications
+  // One-off notification fields (when user is not provided)
+  emailOrPhone?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  // Common fields
   notificationType: NotificationType;
   title?: string | null;
   bodyTemplate: string;
@@ -113,7 +127,7 @@ export interface BaseNotificationCreateInput<UserIdType> {
 }
 
 export interface BaseNotificationUpdateInput<UserIdType> {
-  user: {
+  user?: {
     connect?: AtLeast<
       {
         id?: UserIdType;
@@ -122,6 +136,9 @@ export interface BaseNotificationUpdateInput<UserIdType> {
       'id' | 'email'
     >;
   };
+  emailOrPhone?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
   notificationType?: NotificationType;
   title?: string | null;
   bodyTemplate?: string;
@@ -151,18 +168,21 @@ export class PrismaNotificationBackend<
 > implements BaseNotificationBackend<Config> {
   constructor(private prismaClient: Client) { }
 
+  /**
+   * Serialize a Prisma notification model to either DatabaseNotification or DatabaseOneOffNotification
+   * based on whether it has a userId or not
+   */
   serializeNotification(
     notification: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >,
-  ): DatabaseNotification<Config> {
-    return {
+  ): AnyDatabaseNotification<Config> {
+    const baseData = {
       id: notification.id,
-      userId: notification.userId,
       notificationType: notification.notificationType,
       title: notification.title,
       bodyTemplate: notification.bodyTemplate,
-      contextName: notification.contextName,
+      contextName: notification.contextName as string & keyof Config['ContextMap'],
       contextParameters: notification.contextParameters
         ? (notification.contextParameters as Parameters<
           Config['ContextMap'][keyof Config['ContextMap']]['generate']
@@ -185,6 +205,22 @@ export class PrismaNotificationBackend<
       createdAt: notification.createdAt,
       updatedAt: notification.updatedAt,
     };
+
+    // Check if this is a one-off notification (has emailOrPhone but no userId)
+    if (notification.emailOrPhone && !notification.userId) {
+      return {
+        ...baseData,
+        emailOrPhone: notification.emailOrPhone,
+        firstName: notification.firstName || '',
+        lastName: notification.lastName || '',
+      } as DatabaseOneOffNotification<Config>;
+    }
+
+    // Regular notification with userId
+    return {
+      ...baseData,
+      userId: notification.userId as Config['UserIdType'],
+    } as DatabaseNotification<Config>;
   }
 
   deserializeNotification(
@@ -233,62 +269,56 @@ export class PrismaNotificationBackend<
   }
 
   async getAllPendingNotifications(): Promise<
-    DatabaseNotification<Config>[]
+    AnyDatabaseNotification<Config>[]
   > {
     const notifications = await this.prismaClient.notification.findMany({
-      where: {
-        status: NotificationStatusEnum.PENDING_SEND,
-      },
+      where: { status: NotificationStatusEnum.PENDING_SEND },
     });
 
-    return notifications.map(this.serializeNotification);
+    return notifications.map((n) => this.serializeNotification(n));
   }
 
-  async getPendingNotifications(): Promise<
-    DatabaseNotification<Config>[]
+  async getPendingNotifications(page = 0, pageSize = 100): Promise<
+    AnyDatabaseNotification<Config>[]
   > {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         status: NotificationStatusEnum.PENDING_SEND,
         sendAfter: null,
       },
+      skip: page * pageSize,
+      take: pageSize,
     });
 
-    return notifications.map(this.serializeNotification);
+    return notifications.map((n) => this.serializeNotification(n));
   }
 
   async getAllFutureNotifications(): Promise<
-    DatabaseNotification<Config>[]
+    AnyDatabaseNotification<Config>[]
   > {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
-        status: {
-          not: NotificationStatusEnum.PENDING_SEND,
-        },
-        sendAfter: {
-          lte: new Date(),
-        },
+        status: { not: NotificationStatusEnum.PENDING_SEND },
+        sendAfter: { lte: new Date() },
       },
     });
 
-    return notifications.map(this.serializeNotification);
+    return notifications.map((n) => this.serializeNotification(n));
   }
 
-  async getFutureNotifications(): Promise<
-    DatabaseNotification<Config>[]
+  async getFutureNotifications(page = 0, pageSize = 100): Promise<
+    AnyDatabaseNotification<Config>[]
   > {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
-        status: {
-          not: NotificationStatusEnum.PENDING_SEND,
-        },
-        sendAfter: {
-          lte: new Date(),
-        },
+        status: { not: NotificationStatusEnum.PENDING_SEND },
+        sendAfter: { lte: new Date() },
       },
+      skip: page * pageSize,
+      take: pageSize,
     });
 
-    return notifications.map(this.serializeNotification);
+    return notifications.map((n) => this.serializeNotification(n));
   }
 
   async getAllFutureNotificationsFromUser(
@@ -308,7 +338,8 @@ export class PrismaNotificationBackend<
       },
     });
 
-    return notifications.map(this.serializeNotification);
+    // These are guaranteed to be regular notifications (not one-off) since we're filtering by userId
+    return notifications.map((n) => this.serializeNotification(n) as DatabaseNotification<Config>);
   }
 
   async getFutureNotificationsFromUser(
@@ -332,34 +363,37 @@ export class PrismaNotificationBackend<
       take: pageSize,
     });
 
-    return notifications.map(this.serializeNotification);
+    // These are guaranteed to be regular notifications (not one-off) since we're filtering by userId
+    return notifications.map((n) => this.serializeNotification(n) as DatabaseNotification<Config>);
   }
 
-  async getAllNotifications(): Promise<DatabaseNotification<Config>[]> {
+  async getAllNotifications(): Promise<AnyDatabaseNotification<Config>[]> {
     const notifications = await this.prismaClient.notification.findMany({});
-    return notifications.map(this.serializeNotification);
+
+    return notifications.map((n) => this.serializeNotification(n));
   }
 
   async getNotifications(
     page: number,
     pageSize: number,
-  ): Promise<DatabaseNotification<Config>[]> {
+  ): Promise<AnyDatabaseNotification<Config>[]> {
     const notifications = await this.prismaClient.notification.findMany({
       skip: page * pageSize,
       take: pageSize,
     });
 
-    return notifications.map(this.serializeNotification);
+    return notifications.map((n) => this.serializeNotification(n));
   }
 
   async persistNotification(
     notification: NotificationInput<Config>,
   ): Promise<DatabaseNotification<Config>> {
-    return this.serializeNotification(
-      await this.prismaClient.notification.create({
-        data: this.deserializeNotification(notification),
-      }),
-    );
+    const created = await this.prismaClient.notification.create({
+      data: this.deserializeNotification(notification),
+    });
+
+    // persistNotification takes NotificationInput which always has userId, so this is always a regular notification
+    return this.serializeNotification(created) as DatabaseNotification<Config>;
   }
 
   async persistNotificationUpdate(
@@ -370,14 +404,116 @@ export class PrismaNotificationBackend<
       Omit<DatabaseNotification<Config>, 'id'>
     >,
   ): Promise<DatabaseNotification<Config>> {
-    return this.serializeNotification(
-      await this.prismaClient.notification.update({
-        where: {
-          id: notificationId,
-        },
-        data: this.deserializeNotificationForUpdate(notification),
-      }),
-    );
+    const updated = await this.prismaClient.notification.update({
+      where: {
+        id: notificationId,
+      },
+      data: this.deserializeNotificationForUpdate(notification),
+    });
+
+    // persistNotificationUpdate takes Partial<DatabaseNotification> which has userId, so this is always a regular notification
+    return this.serializeNotification(updated) as DatabaseNotification<Config>;
+  }
+
+  /* One-off notification persistence and query methods */
+  async persistOneOffNotification(
+    notification: OneOffNotificationInput<Config>,
+  ): Promise<DatabaseOneOffNotification<Config>> {
+    const created = await this.prismaClient.notification.create({
+      data: {
+        userId: null, // One-off notifications don't have a userId
+        emailOrPhone: notification.emailOrPhone,
+        firstName: notification.firstName,
+        lastName: notification.lastName,
+        notificationType: notification.notificationType,
+        title: notification.title,
+        bodyTemplate: notification.bodyTemplate,
+        contextName: notification.contextName as string,
+        contextParameters: notification.contextParameters as InputJsonValue,
+        sendAfter: notification.sendAfter,
+        subjectTemplate: notification.subjectTemplate,
+        extraParams: notification.extraParams as InputJsonValue,
+        status: NotificationStatusEnum.PENDING_SEND,
+      },
+    });
+
+    return this.serializeNotification(created) as DatabaseOneOffNotification<Config>;
+  }
+
+  async persistOneOffNotificationUpdate(
+    notificationId: NonNullable<
+      Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
+    >['id'],
+    notification: Partial<
+      Omit<DatabaseOneOffNotification<Config>, 'id'>
+    >,
+  ): Promise<DatabaseOneOffNotification<Config>> {
+    const data: Partial<BaseNotificationUpdateInput<Config['UserIdType']>> = {
+      ...(notification.emailOrPhone !== undefined ? { emailOrPhone: notification.emailOrPhone } : {}),
+      ...(notification.firstName !== undefined ? { firstName: notification.firstName } : {}),
+      ...(notification.lastName !== undefined ? { lastName: notification.lastName } : {}),
+      ...(notification.notificationType ? { notificationType: notification.notificationType } : {}),
+      ...(notification.title ? { title: notification.title } : {}),
+      ...(notification.bodyTemplate ? { bodyTemplate: notification.bodyTemplate } : {}),
+      ...(notification.contextName ? { contextName: notification.contextName as string } : {}),
+      ...(notification.contextParameters ? { contextParameters: notification.contextParameters as InputJsonValue } : {}),
+      ...(notification.sendAfter ? { sendAfter: notification.sendAfter } : {}),
+      ...(notification.subjectTemplate ? { subjectTemplate: notification.subjectTemplate } : {}),
+    };
+
+    const updated = await this.prismaClient.notification.update({
+      where: { id: notificationId as Config['NotificationIdType'] },
+      data,
+    });
+
+    return this.serializeNotification(updated) as DatabaseOneOffNotification<Config>;
+  }
+
+  async getOneOffNotification(
+    notificationId: NonNullable<
+      Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
+    >['id'],
+    _forUpdate: boolean,
+  ): Promise<DatabaseOneOffNotification<Config> | null> {
+    const notification = await this.prismaClient.notification.findUnique({
+      where: {
+        id: notificationId as Config['NotificationIdType'],
+      },
+    });
+
+    if (!notification || !notification.emailOrPhone || notification.userId !== null) {
+      return null;
+    }
+
+    return this.serializeNotification(notification) as DatabaseOneOffNotification<Config>;
+  }
+
+  async getAllOneOffNotifications(): Promise<DatabaseOneOffNotification<Config>[]> {
+    const notifications = await this.prismaClient.notification.findMany({
+      where: {
+        userId: null,
+        emailOrPhone: { not: null },
+      },
+    });
+
+    return notifications
+      .filter((n) => n.emailOrPhone !== null)
+      .map((n) => this.serializeNotification(n) as DatabaseOneOffNotification<Config>);
+  }
+
+  async getOneOffNotifications(page: number, pageSize: number): Promise<DatabaseOneOffNotification<Config>[]> {
+    const notifications = await this.prismaClient.notification.findMany({
+      where: {
+        userId: null,
+        emailOrPhone: { not: null },
+      },
+      skip: page * pageSize,
+      take: pageSize,
+    });
+
+    return notifications
+      .filter((n) => n.emailOrPhone !== null)
+      .map((n) => this.serializeNotification(n) as DatabaseOneOffNotification<Config>);
   }
 
   async markAsSent(
@@ -385,19 +521,27 @@ export class PrismaNotificationBackend<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
     checkIsPending = true,
-  ): Promise<DatabaseNotification<Config>> {
-    return this.serializeNotification(
-      await this.prismaClient.notification.update({
-        where: {
-          id: notificationId,
-          ...(checkIsPending ? { status: NotificationStatusEnum.PENDING_SEND } : {}),
-        },
-        data: {
-          status: NotificationStatusEnum.SENT,
-          sentAt: new Date(),
-        },
-      }),
-    );
+  ): Promise<AnyDatabaseNotification<Config>> {
+    const whereClause: {
+      id: Config['NotificationIdType'];
+      status?: NotificationStatus;
+    } = {
+      id: notificationId as Config['NotificationIdType'],
+    };
+
+    if (checkIsPending) {
+      whereClause.status = NotificationStatusEnum.PENDING_SEND;
+    }
+
+    const updated = await this.prismaClient.notification.update({
+      where: whereClause,
+      data: {
+        status: NotificationStatusEnum.SENT,
+        sentAt: new Date(),
+      },
+    });
+
+    return this.serializeNotification(updated);
   }
 
   async markAsFailed(
@@ -405,19 +549,27 @@ export class PrismaNotificationBackend<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
     checkIsPending = true,
-  ): Promise<DatabaseNotification<Config>> {
-    return this.serializeNotification(
-      await this.prismaClient.notification.update({
-        where: {
-          id: notificationId,
-          ...(checkIsPending ? { status: NotificationStatusEnum.PENDING_SEND } : {}),
-        },
-        data: {
-          status: NotificationStatusEnum.FAILED,
-          sentAt: new Date(),
-        },
-      }),
-    );
+  ): Promise<AnyDatabaseNotification<Config>> {
+    const whereClause: {
+      id: Config['NotificationIdType'];
+      status?: NotificationStatus;
+    } = {
+      id: notificationId as Config['NotificationIdType'],
+    };
+
+    if (checkIsPending) {
+      whereClause.status = NotificationStatusEnum.PENDING_SEND;
+    }
+
+    const updated = await this.prismaClient.notification.update({
+      where: whereClause,
+      data: {
+        status: NotificationStatusEnum.FAILED,
+        sentAt: new Date(),
+      },
+    });
+
+    return this.serializeNotification(updated);
   }
 
   async markAsRead(
@@ -426,18 +578,27 @@ export class PrismaNotificationBackend<
     >['id'],
     checkIsSent = true,
   ): Promise<DatabaseNotification<Config>> {
-    return this.serializeNotification(
-      await this.prismaClient.notification.update({
-        where: {
-          id: notificationId,
-          ...(checkIsSent ? { status: NotificationStatusEnum.SENT } : {}),
-        },
-        data: {
-          status: 'READ',
-          readAt: new Date(),
-        },
-      }),
-    );
+    const whereClause: {
+      id: Config['NotificationIdType'];
+      status?: NotificationStatus;
+    } = {
+      id: notificationId as Config['NotificationIdType'],
+    };
+
+    if (checkIsSent) {
+      whereClause.status = NotificationStatusEnum.SENT;
+    }
+
+    const updated = await this.prismaClient.notification.update({
+      where: whereClause,
+      data: {
+        status: 'READ',
+        readAt: new Date(),
+      },
+    });
+
+    // markAsRead is only for in-app notifications (which are always regular notifications with userId)
+    return this.serializeNotification(updated) as DatabaseNotification<Config>;
   }
 
   async cancelNotification(
@@ -460,15 +621,12 @@ export class PrismaNotificationBackend<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
     _forUpdate: boolean,
-  ): Promise<DatabaseNotification<Config> | null> {
+  ): Promise<AnyDatabaseNotification<Config> | null> {
     const notification = await this.prismaClient.notification.findUnique({
-      where: {
-        id: notificationId,
-      },
+      where: { id: notificationId as Config['NotificationIdType'] },
     });
-    if (!notification) {
-      return null;
-    }
+
+    if (!notification) return null;
 
     return this.serializeNotification(notification);
   }
@@ -486,7 +644,8 @@ export class PrismaNotificationBackend<
       },
     });
 
-    return notifications.map(this.serializeNotification);
+    // These are guaranteed to be regular notifications (not one-off) since we're filtering by userId
+    return notifications.map((n) => this.serializeNotification(n) as DatabaseNotification<Config>);
   }
 
   async filterInAppUnreadNotifications(
@@ -506,7 +665,8 @@ export class PrismaNotificationBackend<
       take: pageSize,
     });
 
-    return notifications.map(this.serializeNotification);
+    // These are guaranteed to be regular notifications (not one-off) since we're filtering by userId
+    return notifications.map((n) => this.serializeNotification(n) as DatabaseNotification<Config>);
   }
 
   async getUserEmailFromNotification(
@@ -533,12 +693,8 @@ export class PrismaNotificationBackend<
     context: InputJsonValue,
   ): Promise<void> {
     await this.prismaClient.notification.update({
-      where: {
-        id: notificationId,
-      },
-      data: {
-        contextUsed: context,
-      },
+      where: { id: notificationId as Config['NotificationIdType'] },
+      data: { contextUsed: context }
     });
   }
 

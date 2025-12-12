@@ -18,7 +18,7 @@
   "dependencies": {
     "@prisma/client": "^6.3.1",
     "prisma": "^6.3.1",
-    "vintasend": "^0.2.3"
+    "vintasend": "file:../../.."
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
