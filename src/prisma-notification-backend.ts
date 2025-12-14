@@ -1,7 +1,7 @@
 import type { BaseNotificationBackend } from '../../../services/notification-backends/base-notification-backend';
 import type { InputJsonValue, JsonValue } from 'vintasend/dist/types/json-values';
-import type { DatabaseNotification, Notification, NotificationInput } from 'vintasend/dist/types/notification';
-import type { DatabaseOneOffNotification, OneOffNotificationInput, AnyDatabaseNotification } from '../../../types/notification';
+import type { AnyNotificationInput, DatabaseNotification, Notification, NotificationInput } from 'vintasend/dist/types/notification';
+import type { DatabaseOneOffNotification, OneOffNotificationInput, AnyNotification, AnyDatabaseNotification } from '../../../types/notification';
 import type { NotificationStatus } from 'vintasend/dist/types/notification-status';
 import type { NotificationType } from 'vintasend/dist/types/notification-type';
 import type { BaseNotificationTypeConfig } from 'vintasend/dist/types/notification-type-config';
@@ -224,14 +224,28 @@ export class PrismaNotificationBackend<
   }
 
   deserializeNotification(
-    notification: NotificationInput<Config>,
+    notification: AnyNotificationInput<Config> | Omit<AnyNotificationInput<Config>, 'id'>,
   ): BaseNotificationCreateInput<Config['UserIdType']> {
     return {
-      user: {
-        connect: {
-          id: notification.userId,
-        },
-      },
+      ...( 'userId' in notification
+        ? {
+          user: {
+            connect: {
+              id: notification.userId,
+            },
+          }
+        }
+        : {}
+      ),
+      ...(
+        'emailOrPhone' in notification
+        ? {
+          emailOrPhone: notification.emailOrPhone,
+          firstName: notification.firstName,
+          lastName: notification.lastName,
+        }
+        : {}
+      ),
       notificationType: notification.notificationType,
       title: notification.title,
       bodyTemplate: notification.bodyTemplate,
@@ -699,7 +713,7 @@ export class PrismaNotificationBackend<
   }
 
   async bulkPersistNotifications(
-    notifications: Omit<Notification<Config>, 'id'>[],
+    notifications: Omit<AnyNotification<Config>, 'id'>[],
   ): Promise<Config['NotificationIdType'][]> {
     return this.prismaClient.notification.createMany({
       data: notifications.map((notification) =>
