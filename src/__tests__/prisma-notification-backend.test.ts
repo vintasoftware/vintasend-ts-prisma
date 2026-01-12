@@ -1323,14 +1323,14 @@ describe('PrismaNotificationBackend', () => {
       it('should allow clearing fields with empty string or null', async () => {
         const updateData = {
           title: '',
-          firstName: null,
+          subjectTemplate: null,
         };
 
         const updatedNotification = {
           id: '1',
           userId: null,
           emailOrPhone: 'oneoff@example.com',
-          firstName: null,
+          firstName: 'John',
           lastName: 'Doe',
           notificationType: NotificationTypeEnum.EMAIL,
           title: '',
@@ -1338,7 +1338,7 @@ describe('PrismaNotificationBackend', () => {
           contextName: 'testContext',
           contextParameters: { param1: 'value1' },
           sendAfter: null,
-          subjectTemplate: 'Test Subject',
+          subjectTemplate: null,
           status: NotificationStatusEnum.PENDING_SEND,
           contextUsed: null,
           extraParams: null,
@@ -1358,11 +1358,11 @@ describe('PrismaNotificationBackend', () => {
           where: { id: '1' },
           data: {
             title: '',
-            firstName: null,
+            subjectTemplate: null,
           },
         });
         expect(result.title).toBe('');
-        expect(result.firstName).toBeNull();
+        expect(result.subjectTemplate).toBeNull();
       });
     });
 
