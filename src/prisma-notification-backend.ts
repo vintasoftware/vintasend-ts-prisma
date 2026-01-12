@@ -408,7 +408,7 @@ export class PrismaNotificationBackend<
     notification: AnyNotificationInput<Config> | Omit<AnyNotificationInput<Config>, 'id'>,
   ): BaseNotificationCreateInput<Config['UserIdType']> {
     return {
-      ...( 'userId' in notification
+      ...( 'userId' in notification && notification.userId != null
         ? {
           user: {
             connect: {
@@ -416,7 +416,7 @@ export class PrismaNotificationBackend<
             },
           }
         }
-        : {}
+        : { userId: null }
       ),
       ...(
         'emailOrPhone' in notification
@@ -725,7 +725,11 @@ export class PrismaNotificationBackend<
       where: { id: notificationId as Config['NotificationIdType'] },
     });
 
-    if (!notification || notification.userId == null) {
+    if (!notification) {
+      throw new Error('Notification not found');
+    }
+
+    if (notification.userId == null) {
       throw new Error('Cannot mark one-off notification as read');
     }
 

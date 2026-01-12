@@ -301,6 +301,21 @@ describe('PrismaNotificationBackend', () => {
       // Should not call update
       expect(mockPrismaClient.notification.update).not.toHaveBeenCalled();
     });
+
+    it('should throw error when trying to mark a non-existent notification as read', async () => {
+      const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+      findUniqueMock.mockResolvedValue(null);
+
+      await expect(backend.markAsRead('non-existent-id')).rejects.toThrow(
+        'Notification not found'
+      );
+
+      expect(mockPrismaClient.notification.findUnique).toHaveBeenCalledWith({
+        where: { id: 'non-existent-id' },
+      });
+      // Should not call update if the notification does not exist
+      expect(mockPrismaClient.notification.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('filterInAppUnreadNotifications', () => {
@@ -1054,6 +1069,39 @@ describe('PrismaNotificationBackend', () => {
   });
 
   describe('bulkPersistNotifications', () => {
+    it('should handle notifications missing both userId and emailOrPhone', async () => {
+      const notifications = [
+        {
+          notificationType: NotificationTypeEnum.EMAIL,
+          bodyTemplate: 'Body invalid',
+          contextName: 'testContext' as keyof TestContexts,
+          contextParameters: { param1: 'invalid' },
+          title: 'Invalid notification',
+          subjectTemplate: 'Invalid subject',
+          extraParams: null,
+          sendAfter: null,
+          // biome-ignore lint/suspicious/noExplicitAny: Testing invalid input
+        } as any,
+      ];
+
+      const createManyMock = mockPrismaClient.notification.createMany as jest.Mock;
+      createManyMock.mockResolvedValue(['id1']);
+
+      const result = await backend.bulkPersistNotifications(notifications);
+
+      // Should set userId to null for notifications without userId or emailOrPhone
+      expect(mockPrismaClient.notification.createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            userId: null,
+            bodyTemplate: 'Body invalid',
+          }),
+        ]),
+      });
+
+      expect(result).toEqual(['id1']);
+    });
+
     it('should create multiple regular notifications', async () => {
       const notifications = [
         {
