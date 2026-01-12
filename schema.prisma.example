@@ -15,8 +15,14 @@ model User {
 
 model Notification {
   id                          Int                       @id @default(autoincrement())
-  user                        User                      @relation(fields: [userId], references: [id])
-  userId                      Int
+  // For regular notifications (required)
+  user                        User?                     @relation(fields: [userId], references: [id])
+  userId                      Int?
+  // For one-off notifications (optional - used when userId is null)
+  emailOrPhone                String?
+  firstName                   String?
+  lastName                    String?
+  // Common fields
   notificationType            NotificationType
   title                       String?
   bodyTemplate                String
@@ -26,11 +32,16 @@ model Notification {
   subjectTemplate             String?
   status                      NotificationStatus        @default(PENDING_SEND)
   contextUsed                 Json?
+  extraParams                 Json?
   adapterUsed                 String?
   sentAt                      DateTime?
   readAt                      DateTime?
   createdAt                   DateTime                  @default(now())
   updatedAt                   DateTime                  @updatedAt
+
+  @@index([status, sendAfter])
+  @@index([userId])
+  @@index([emailOrPhone])
 }
 
 enum NotificationType {
