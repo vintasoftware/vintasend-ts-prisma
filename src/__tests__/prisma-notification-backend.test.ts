@@ -231,7 +231,8 @@ describe('PrismaNotificationBackend', () => {
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
         where: {
           id: '1',
-          "status": NotificationStatusEnum.SENT,
+          status: NotificationStatusEnum.SENT,
+          userId: { not: null },
         },
         data: {
           status: NotificationStatusEnum.READ,
@@ -257,6 +258,7 @@ describe('PrismaNotificationBackend', () => {
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
         where: {
           id: '1',
+          userId: { not: null },
         },
         data: {
           status: NotificationStatusEnum.READ,
