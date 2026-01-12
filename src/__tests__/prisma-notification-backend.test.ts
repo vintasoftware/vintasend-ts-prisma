@@ -223,19 +223,25 @@ describe('PrismaNotificationBackend', () => {
         readAt: new Date(),
       };
 
+      // Mock findUnique to return a regular notification with userId
+      const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+      findUniqueMock.mockResolvedValue(mockNotification);
+
       const updateMock = mockPrismaClient.notification.update as jest.Mock;
       updateMock.mockResolvedValue(readNotification);
 
       const result = await backend.markAsRead('1');
 
+      expect(mockPrismaClient.notification.findUnique).toHaveBeenCalledWith({
+        where: { id: '1' },
+      });
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
         where: {
           id: '1',
           status: NotificationStatusEnum.SENT,
-          userId: { not: null },
         },
         data: {
-          status: NotificationStatusEnum.READ,
+          status: 'READ',
           readAt: expect.any(Date),
         },
       });
@@ -250,23 +256,50 @@ describe('PrismaNotificationBackend', () => {
         readAt: new Date(),
       };
 
+      // Mock findUnique to return a regular notification with userId
+      const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+      findUniqueMock.mockResolvedValue(mockNotification);
+
       const updateMock = mockPrismaClient.notification.update as jest.Mock;
       updateMock.mockResolvedValue(readNotification);
 
       const result = await backend.markAsRead('1', false);
 
+      expect(mockPrismaClient.notification.findUnique).toHaveBeenCalledWith({
+        where: { id: '1' },
+      });
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
         where: {
           id: '1',
-          userId: { not: null },
         },
         data: {
-          status: NotificationStatusEnum.READ,
+          status: 'READ',
           readAt: expect.any(Date),
         },
       });
       expect(result?.status).toBe(NotificationStatusEnum.READ);
       expect(result?.readAt).toBeDefined();
+    });
+
+    it('should throw error when trying to mark one-off notification as read', async () => {
+      const oneOffNotification = {
+        ...mockNotification,
+        userId: null,
+        emailOrPhone: 'test@example.com',
+      };
+
+      const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+      findUniqueMock.mockResolvedValue(oneOffNotification);
+
+      await expect(backend.markAsRead('1')).rejects.toThrow(
+        'Cannot mark one-off notification as read'
+      );
+
+      expect(mockPrismaClient.notification.findUnique).toHaveBeenCalledWith({
+        where: { id: '1' },
+      });
+      // Should not call update
+      expect(mockPrismaClient.notification.update).not.toHaveBeenCalled();
     });
   });
 
