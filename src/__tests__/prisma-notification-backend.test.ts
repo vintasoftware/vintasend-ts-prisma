@@ -1069,7 +1069,7 @@ describe('PrismaNotificationBackend', () => {
   });
 
   describe('bulkPersistNotifications', () => {
-    it('should handle notifications missing both userId and emailOrPhone', async () => {
+    it('should throw error for notifications missing both userId and emailOrPhone', async () => {
       const notifications = [
         {
           notificationType: NotificationTypeEnum.EMAIL,
@@ -1084,22 +1084,10 @@ describe('PrismaNotificationBackend', () => {
         } as any,
       ];
 
-      const createManyMock = mockPrismaClient.notification.createMany as jest.Mock;
-      createManyMock.mockResolvedValue(['id1']);
-
-      const result = await backend.bulkPersistNotifications(notifications);
-
-      // Should set userId to null for notifications without userId or emailOrPhone
-      expect(mockPrismaClient.notification.createMany).toHaveBeenCalledWith({
-        data: expect.arrayContaining([
-          expect.objectContaining({
-            userId: null,
-            bodyTemplate: 'Body invalid',
-          }),
-        ]),
-      });
-
-      expect(result).toEqual(['id1']);
+      // Should throw validation error
+      await expect(backend.bulkPersistNotifications(notifications)).rejects.toThrow(
+        'Invalid notification: missing both userId and emailOrPhone'
+      );
     });
 
     it('should create multiple regular notifications', async () => {
@@ -1200,6 +1188,49 @@ describe('PrismaNotificationBackend', () => {
         ]),
       });
       expect(result).toEqual(['id3', 'id4']);
+    });
+
+    it('should prefer userId when both userId and emailOrPhone are provided', async () => {
+      const notifications = [
+        {
+          userId: 'user-with-both',
+          emailOrPhone: 'both@example.com',
+          firstName: 'Both',
+          lastName: 'Fields',
+          notificationType: NotificationTypeEnum.EMAIL,
+          bodyTemplate: 'Body with both',
+          contextName: 'testContext' as keyof TestContexts,
+          contextParameters: { param1: 'value1' },
+          title: 'Title with both',
+          subjectTemplate: 'Subject with both',
+          extraParams: null,
+          sendAfter: null,
+        },
+      ];
+
+      const createManyMock = mockPrismaClient.notification.createMany as jest.Mock;
+      createManyMock.mockResolvedValue(['id-both']);
+
+      const result = await backend.bulkPersistNotifications(notifications);
+
+      // userId should take precedence, creating a regular notification
+      expect(mockPrismaClient.notification.createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            user: { connect: { id: 'user-with-both' } },
+            bodyTemplate: 'Body with both',
+          }),
+        ]),
+      });
+
+      // Should not include one-off fields when userId is present
+      const callData = (mockPrismaClient.notification.createMany as jest.Mock).mock.calls[0][0].data[0];
+      expect(callData).not.toHaveProperty('emailOrPhone');
+      expect(callData).not.toHaveProperty('firstName');
+      expect(callData).not.toHaveProperty('lastName');
+      expect(callData).not.toHaveProperty('userId', null);
+
+      expect(result).toEqual(['id-both']);
     });
 
     it('should create mix of regular and one-off notifications', async () => {

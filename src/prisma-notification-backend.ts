@@ -285,17 +285,25 @@ export class PrismaNotificationBackend<
   }
 
   /**
-   * Deserialize a regular notification input for creation
+   * Core internal builder for creating notification data
+   * Validates that notification has either userId or emailOrPhone (but not neither)
    */
-  private deserializeRegularNotification(
-    notification: NotificationInput<Config>,
+  private buildCreateData(
+    notification: AnyNotificationInput<Config> | Omit<AnyNotificationInput<Config>, 'id'>,
   ): BaseNotificationCreateInput<Config['UserIdType']> {
-    return {
-      user: {
-        connect: {
-          id: notification.userId,
-        },
-      },
+    const hasUserId = 'userId' in notification && notification.userId != null;
+    const hasEmailOrPhone = 'emailOrPhone' in notification && notification.emailOrPhone != null;
+
+    // Validate: must have either userId or emailOrPhone
+    if (!hasUserId && !hasEmailOrPhone) {
+      throw new Error('Invalid notification: missing both userId and emailOrPhone');
+    }
+
+    // Determine if this is a one-off notification
+    // When both are provided, userId takes precedence (regular notification)
+    const isOneOff = !hasUserId && hasEmailOrPhone;
+
+    const base: BaseNotificationCreateInput<Config['UserIdType']> = {
       notificationType: notification.notificationType,
       title: notification.title,
       bodyTemplate: notification.bodyTemplate,
@@ -305,6 +313,35 @@ export class PrismaNotificationBackend<
       subjectTemplate: notification.subjectTemplate,
       extraParams: notification.extraParams as InputJsonValue,
     };
+
+    if (isOneOff) {
+      return {
+        ...base,
+        userId: null,
+        emailOrPhone: 'emailOrPhone' in notification ? notification.emailOrPhone : '',
+        firstName: ('firstName' in notification ? notification.firstName : null) ?? null,
+        lastName: ('lastName' in notification ? notification.lastName : null) ?? null,
+        status: NotificationStatusEnum.PENDING_SEND,
+      };
+    }
+
+    // At this point we know hasUserId is true, so userId exists and is not null
+    const userId = ('userId' in notification ? notification.userId : null) as Config['UserIdType'];
+    return {
+      ...base,
+      user: {
+        connect: { id: userId },
+      },
+    };
+  }
+
+  /**
+   * Deserialize a regular notification input for creation
+   */
+  private deserializeRegularNotification(
+    notification: NotificationInput<Config>,
+  ): BaseNotificationCreateInput<Config['UserIdType']> {
+    return this.buildCreateData(notification);
   }
 
   /**
@@ -313,34 +350,23 @@ export class PrismaNotificationBackend<
   private buildOneOffNotificationData(
     notification: OneOffNotificationInput<Config>,
   ): BaseNotificationCreateInput<Config['UserIdType']> {
-    return {
-      userId: null,
-      emailOrPhone: notification.emailOrPhone,
-      firstName: notification.firstName,
-      lastName: notification.lastName,
-      notificationType: notification.notificationType,
-      title: notification.title,
-      bodyTemplate: notification.bodyTemplate,
-      contextName: notification.contextName as string,
-      contextParameters: notification.contextParameters as InputJsonValue,
-      sendAfter: notification.sendAfter,
-      subjectTemplate: notification.subjectTemplate,
-      extraParams: notification.extraParams as InputJsonValue,
-      status: NotificationStatusEnum.PENDING_SEND,
-    };
+    return this.buildCreateData(notification);
   }
 
   /**
-   * Build update data from notification partial (supports both regular and one-off)
+   * Core internal builder for update data (supports both regular and one-off)
    */
-  private buildUpdateDataFromNotification(
+  private buildUpdateData(
     notification: Partial<
       Omit<DatabaseNotification<Config>, 'id'> | Omit<DatabaseOneOffNotification<Config>, 'id'>
     >,
   ): Partial<BaseNotificationUpdateInput<Config['UserIdType']>> {
     const data: Partial<BaseNotificationUpdateInput<Config['UserIdType']>> = {};
 
-    // Handle one-off specific fields
+    // Handle user / one-off fields
+    if ('userId' in notification && notification.userId !== undefined) {
+      data.user = { connect: { id: notification.userId } };
+    }
     if ('emailOrPhone' in notification && notification.emailOrPhone !== undefined) {
       data.emailOrPhone = notification.emailOrPhone;
     }
@@ -349,15 +375,6 @@ export class PrismaNotificationBackend<
     }
     if ('lastName' in notification && notification.lastName !== undefined) {
       data.lastName = notification.lastName;
-    }
-
-    // Handle regular notification userId (only if not a one-off)
-    if ('userId' in notification && notification.userId !== undefined) {
-      data.user = {
-        connect: {
-          id: notification.userId,
-        },
-      };
     }
 
     // Handle common fields
@@ -407,35 +424,7 @@ export class PrismaNotificationBackend<
   deserializeNotification(
     notification: AnyNotificationInput<Config> | Omit<AnyNotificationInput<Config>, 'id'>,
   ): BaseNotificationCreateInput<Config['UserIdType']> {
-    return {
-      ...( 'userId' in notification && notification.userId != null
-        ? {
-          user: {
-            connect: {
-              id: notification.userId,
-            },
-          }
-        }
-        : { userId: null }
-      ),
-      ...(
-        'emailOrPhone' in notification
-        ? {
-          emailOrPhone: notification.emailOrPhone,
-          firstName: notification.firstName,
-          lastName: notification.lastName,
-        }
-        : {}
-      ),
-      notificationType: notification.notificationType,
-      title: notification.title,
-      bodyTemplate: notification.bodyTemplate,
-      contextName: notification.contextName as string,
-      contextParameters: notification.contextParameters as InputJsonValue,
-      sendAfter: notification.sendAfter,
-      subjectTemplate: notification.subjectTemplate,
-      extraParams: notification.extraParams as InputJsonValue,
-    };
+    return this.buildCreateData(notification);
   }
 
   deserializeNotificationForUpdate(
@@ -600,7 +589,7 @@ export class PrismaNotificationBackend<
       where: {
         id: notificationId,
       },
-      data: this.deserializeNotificationForUpdate(notification),
+      data: this.buildUpdateData(notification),
     });
 
     return this.serializeRegularNotification(updated);
@@ -627,7 +616,7 @@ export class PrismaNotificationBackend<
   ): Promise<DatabaseOneOffNotification<Config>> {
     const updated = await this.prismaClient.notification.update({
       where: { id: notificationId as Config['NotificationIdType'] },
-      data: this.buildUpdateDataFromNotification(notification),
+      data: this.buildUpdateData(notification),
     });
 
     return this.serializeOneOffNotification(updated);
