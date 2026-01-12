@@ -363,18 +363,40 @@ export class PrismaNotificationBackend<
   ): Partial<BaseNotificationUpdateInput<Config['UserIdType']>> {
     const data: Partial<BaseNotificationUpdateInput<Config['UserIdType']>> = {};
 
-    // Handle user / one-off fields
-    if ('userId' in notification && notification.userId !== undefined) {
+    // Determine if this is transitioning between regular and one-off notification types
+    const hasUserId = 'userId' in notification && notification.userId !== undefined;
+    const hasOneOffFields = 'emailOrPhone' in notification && notification.emailOrPhone !== undefined;
+
+    // Handle user / one-off fields with mutual exclusion
+    if (hasUserId) {
+      // Converting to regular notification: set user and clear one-off fields
       data.user = { connect: { id: notification.userId } };
-    }
-    if ('emailOrPhone' in notification && notification.emailOrPhone !== undefined) {
+      // Clear one-off specific fields when transitioning to regular notification
+      data.emailOrPhone = null;
+      data.firstName = null;
+      data.lastName = null;
+    } else if (hasOneOffFields) {
+      // Converting to one-off notification: set one-off fields
+      // Note: We cannot explicitly clear the user relationship via update,
+      // but setting emailOrPhone indicates this is now a one-off notification
       data.emailOrPhone = notification.emailOrPhone;
-    }
-    if ('firstName' in notification && notification.firstName !== undefined) {
-      data.firstName = notification.firstName;
-    }
-    if ('lastName' in notification && notification.lastName !== undefined) {
-      data.lastName = notification.lastName;
+      if ('firstName' in notification && notification.firstName !== undefined) {
+        data.firstName = notification.firstName;
+      }
+      if ('lastName' in notification && notification.lastName !== undefined) {
+        data.lastName = notification.lastName;
+      }
+    } else {
+      // No type transition, just update individual fields if provided
+      if ('emailOrPhone' in notification && notification.emailOrPhone !== undefined) {
+        data.emailOrPhone = notification.emailOrPhone;
+      }
+      if ('firstName' in notification && notification.firstName !== undefined) {
+        data.firstName = notification.firstName;
+      }
+      if ('lastName' in notification && notification.lastName !== undefined) {
+        data.lastName = notification.lastName;
+      }
     }
 
     // Handle common fields
@@ -727,7 +749,7 @@ export class PrismaNotificationBackend<
         checkStatus: checkIsSent ? NotificationStatusEnum.SENT : undefined,
       }),
       data: {
-        status: 'READ',
+        status: NotificationStatusEnum.READ,
         readAt: new Date(),
       },
     });
