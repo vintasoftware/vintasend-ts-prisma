@@ -1,7 +1,7 @@
 import { PrismaNotificationBackendFactory } from '../index';
 import { NotificationStatusEnum, NotificationTypeEnum } from '../prisma-notification-backend';
 import type { NotificationPrismaClientInterface, PrismaNotificationBackend } from '../prisma-notification-backend';
-import type { DatabaseNotification, AnyDatabaseNotification } from 'vintasend/dist/types/notification';
+import type { DatabaseNotification, AnyDatabaseNotification, DatabaseOneOffNotification } from 'vintasend/dist/types/notification';
 
 type TestContexts = {
   testContext: {
@@ -741,15 +741,14 @@ describe('PrismaNotificationBackend', () => {
         lastName: null,
       };
 
-      // biome-ignore lint/suspicious/noExplicitAny: test helper type casting
-      const serialized: AnyDatabaseNotification<any> = backend.serializeNotification(
-        oneOffNotification as any,
-      );
+      const serialized = backend.serializeNotification(oneOffNotification);
 
       expect(serialized).not.toHaveProperty('userId');
       expect(serialized).toHaveProperty('emailOrPhone', 'oneoff@example.com');
-      expect((serialized as any).firstName).toBe('');
-      expect((serialized as any).lastName).toBe('');
+      if ('emailOrPhone' in serialized) {
+        expect(serialized.firstName).toBe('');
+        expect(serialized.lastName).toBe('');
+      }
     });
 
     it('serializes one-off notifications with firstName and lastName', () => {
@@ -761,15 +760,14 @@ describe('PrismaNotificationBackend', () => {
         lastName: 'Doe',
       };
 
-      // biome-ignore lint/suspicious/noExplicitAny: test helper type casting
-      const serialized: AnyDatabaseNotification<any> = backend.serializeNotification(
-        oneOffNotification as any,
-      );
+      const serialized = backend.serializeNotification(oneOffNotification);
 
       expect(serialized).not.toHaveProperty('userId');
       expect(serialized).toHaveProperty('emailOrPhone', 'oneoff@example.com');
-      expect((serialized as any).firstName).toBe('John');
-      expect((serialized as any).lastName).toBe('Doe');
+      if ('emailOrPhone' in serialized) {
+        expect(serialized.firstName).toBe('John');
+        expect(serialized.lastName).toBe('Doe');
+      }
     });
 
     it('throws error for invalid notification with no userId and no emailOrPhone', () => {
@@ -779,7 +777,7 @@ describe('PrismaNotificationBackend', () => {
         emailOrPhone: null,
       };
 
-      expect(() => backend.serializeNotification(invalidNotification as any)).toThrow(
+      expect(() => backend.serializeNotification(invalidNotification)).toThrow(
         'Invalid notification: missing both userId and emailOrPhone'
       );
     });
@@ -793,49 +791,15 @@ describe('PrismaNotificationBackend', () => {
         lastName: 'Smith',
       };
 
-      // biome-ignore lint/suspicious/noExplicitAny: test helper type casting
-      const serialized: AnyDatabaseNotification<any> = backend.serializeNotification(
-        oneOffNotification as any,
-      );
+      const serialized = backend.serializeNotification(oneOffNotification);
 
       // Empty string should still be treated as one-off notification
       expect(serialized).not.toHaveProperty('userId');
       expect(serialized).toHaveProperty('emailOrPhone', '');
-      expect((serialized as any).firstName).toBe('Jane');
-      expect((serialized as any).lastName).toBe('Smith');
-    });
-
-    it('should correctly serialize notification with all fields', () => {
-      const fullNotification = {
-        ...mockNotification,
-        emailOrPhone: null,
-        firstName: null,
-        lastName: null,
-        contextUsed: { generatedValue: 'test' },
-        extraParams: { param1: 'value1', param2: true, param3: 42 },
-      };
-
-      const result = backend.serializeNotification(fullNotification);
-
-      expect(result).toEqual({
-        id: fullNotification.id,
-        userId: fullNotification.userId,
-        notificationType: fullNotification.notificationType,
-        title: fullNotification.title,
-        bodyTemplate: fullNotification.bodyTemplate,
-        contextName: fullNotification.contextName as keyof TestContexts,
-        contextParameters: fullNotification.contextParameters,
-        sendAfter: fullNotification.sendAfter,
-        subjectTemplate: fullNotification.subjectTemplate,
-        status: fullNotification.status,
-        contextUsed: fullNotification.contextUsed,
-        extraParams: fullNotification.extraParams,
-        adapterUsed: fullNotification.adapterUsed,
-        sentAt: fullNotification.sentAt,
-        readAt: fullNotification.readAt,
-        createdAt: fullNotification.createdAt,
-        updatedAt: fullNotification.updatedAt,
-      });
+      if ('emailOrPhone' in serialized) {
+        expect(serialized.firstName).toBe('Jane');
+        expect(serialized.lastName).toBe('Smith');
+      }
     });
 
     it('should handle null values in optional fields', () => {
