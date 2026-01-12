@@ -166,6 +166,53 @@ describe('PrismaNotificationBackend', () => {
       expect(result.status).toBe(NotificationStatusEnum.SENT);
       expect(result.sentAt).toBeDefined();
     });
+
+    it('markAsSent updates and returns a one-off notification (userId null, emailOrPhone set)', async () => {
+      const now = new Date();
+
+      const oneOffNotification = {
+        id: 'one-off-1',
+        userId: null,
+        emailOrPhone: 'oneoff@example.com',
+        firstName: null,
+        lastName: null,
+        notificationType: NotificationTypeEnum.EMAIL,
+        title: 'One-off title',
+        bodyTemplate: 'One-off body',
+        contextName: 'testContext',
+        contextParameters: { param1: 'value1' },
+        sendAfter: null,
+        subjectTemplate: null,
+        status: NotificationStatusEnum.SENT,
+        contextUsed: null,
+        extraParams: null,
+        adapterUsed: null,
+        sentAt: now,
+        readAt: null,
+        createdAt: new Date('2024-01-01T00:00:00.000Z'),
+        updatedAt: now,
+      };
+
+      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      updateMock.mockResolvedValue(oneOffNotification);
+
+      // biome-ignore lint/suspicious/noExplicitAny: tests cover widened notification shape
+      const result: AnyDatabaseNotification<any> = await backend.markAsSent('one-off-1');
+
+      expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
+        where: {
+          id: 'one-off-1',
+          status: NotificationStatusEnum.PENDING_SEND,
+        },
+        data: {
+          status: NotificationStatusEnum.SENT,
+          sentAt: expect.any(Date),
+        },
+      });
+
+      expect(result.status).toBe(NotificationStatusEnum.SENT);
+      expect(result.sentAt).toBeInstanceOf(Date);
+    });
   });
 
   describe('markAsRead', () => {
@@ -284,6 +331,23 @@ describe('PrismaNotificationBackend', () => {
         status: NotificationStatusEnum.PENDING_SEND,
       });
     });
+
+    it('should fetch pending notifications with custom pagination', async () => {
+      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      findManyMock.mockResolvedValue([mockNotification]);
+
+      const result = await backend.getPendingNotifications(2, 50);
+
+      expect(mockPrismaClient.notification.findMany).toHaveBeenCalledWith({
+        where: {
+          status: NotificationStatusEnum.PENDING_SEND,
+          sendAfter: null,
+        },
+        skip: 100,
+        take: 50,
+      });
+      expect(result).toHaveLength(1);
+    });
   });
 
   describe('getAllFutureNotifications', () => {
@@ -357,6 +421,53 @@ describe('PrismaNotificationBackend', () => {
       });
       expect(result.status).toBe(NotificationStatusEnum.FAILED);
       expect(result.sentAt).toBeDefined();
+    });
+
+    it('markAsFailed updates and returns a one-off notification (userId null, emailOrPhone set)', async () => {
+      const now = new Date();
+
+      const oneOffNotification = {
+        id: 'one-off-2',
+        userId: null,
+        emailOrPhone: 'oneoff-failed@example.com',
+        firstName: null,
+        lastName: null,
+        notificationType: NotificationTypeEnum.EMAIL,
+        title: 'One-off failed title',
+        bodyTemplate: 'One-off failed body',
+        contextName: 'testContext',
+        contextParameters: { param1: 'value1' },
+        sendAfter: null,
+        subjectTemplate: null,
+        status: NotificationStatusEnum.FAILED,
+        contextUsed: null,
+        extraParams: null,
+        adapterUsed: null,
+        sentAt: now,
+        readAt: null,
+        createdAt: new Date('2024-01-02T00:00:00.000Z'),
+        updatedAt: now,
+      };
+
+      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      updateMock.mockResolvedValue(oneOffNotification);
+
+      // biome-ignore lint/suspicious/noExplicitAny: tests cover widened notification shape
+      const result: AnyDatabaseNotification<any> = await backend.markAsFailed('one-off-2');
+
+      expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
+        where: {
+          id: 'one-off-2',
+          status: NotificationStatusEnum.PENDING_SEND,
+        },
+        data: {
+          status: NotificationStatusEnum.FAILED,
+          sentAt: expect.any(Date),
+        },
+      });
+
+      expect(result.status).toBe(NotificationStatusEnum.FAILED);
+      expect(result.sentAt).toBeInstanceOf(Date);
     });
   });
 
@@ -619,6 +730,112 @@ describe('PrismaNotificationBackend', () => {
       });
     });
 
+    it('serializes one-off notifications with emailOrPhone into DatabaseOneOffNotification', () => {
+      const oneOffNotification = {
+        ...mockNotification,
+        userId: null,
+        emailOrPhone: 'oneoff@example.com',
+        firstName: null,
+        lastName: null,
+      };
+
+      // biome-ignore lint/suspicious/noExplicitAny: test helper type casting
+      const serialized: AnyDatabaseNotification<any> = backend.serializeNotification(
+        oneOffNotification as any,
+      );
+
+      expect(serialized).not.toHaveProperty('userId');
+      expect(serialized).toHaveProperty('emailOrPhone', 'oneoff@example.com');
+      expect((serialized as any).firstName).toBe('');
+      expect((serialized as any).lastName).toBe('');
+    });
+
+    it('serializes one-off notifications with firstName and lastName', () => {
+      const oneOffNotification = {
+        ...mockNotification,
+        userId: null,
+        emailOrPhone: 'oneoff@example.com',
+        firstName: 'John',
+        lastName: 'Doe',
+      };
+
+      // biome-ignore lint/suspicious/noExplicitAny: test helper type casting
+      const serialized: AnyDatabaseNotification<any> = backend.serializeNotification(
+        oneOffNotification as any,
+      );
+
+      expect(serialized).not.toHaveProperty('userId');
+      expect(serialized).toHaveProperty('emailOrPhone', 'oneoff@example.com');
+      expect((serialized as any).firstName).toBe('John');
+      expect((serialized as any).lastName).toBe('Doe');
+    });
+
+    it('throws error for invalid notification with no userId and no emailOrPhone', () => {
+      const invalidNotification = {
+        ...mockNotification,
+        userId: null,
+        emailOrPhone: null,
+      };
+
+      expect(() => backend.serializeNotification(invalidNotification as any)).toThrow(
+        'Invalid notification: missing both userId and emailOrPhone'
+      );
+    });
+
+    it('correctly handles empty string emailOrPhone as one-off notification', () => {
+      const oneOffNotification = {
+        ...mockNotification,
+        userId: null,
+        emailOrPhone: '',
+        firstName: 'Jane',
+        lastName: 'Smith',
+      };
+
+      // biome-ignore lint/suspicious/noExplicitAny: test helper type casting
+      const serialized: AnyDatabaseNotification<any> = backend.serializeNotification(
+        oneOffNotification as any,
+      );
+
+      // Empty string should still be treated as one-off notification
+      expect(serialized).not.toHaveProperty('userId');
+      expect(serialized).toHaveProperty('emailOrPhone', '');
+      expect((serialized as any).firstName).toBe('Jane');
+      expect((serialized as any).lastName).toBe('Smith');
+    });
+
+    it('should correctly serialize notification with all fields', () => {
+      const fullNotification = {
+        ...mockNotification,
+        emailOrPhone: null,
+        firstName: null,
+        lastName: null,
+        contextUsed: { generatedValue: 'test' },
+        extraParams: { param1: 'value1', param2: true, param3: 42 },
+      };
+
+      const result = backend.serializeNotification(fullNotification);
+
+      expect(result).toEqual({
+        id: fullNotification.id,
+        userId: fullNotification.userId,
+        notificationType: fullNotification.notificationType,
+        title: fullNotification.title,
+        bodyTemplate: fullNotification.bodyTemplate,
+        contextName: fullNotification.contextName as keyof TestContexts,
+        contextParameters: fullNotification.contextParameters,
+        sendAfter: fullNotification.sendAfter,
+        subjectTemplate: fullNotification.subjectTemplate,
+        status: fullNotification.status,
+        contextUsed: fullNotification.contextUsed,
+        extraParams: fullNotification.extraParams,
+        adapterUsed: fullNotification.adapterUsed,
+        sentAt: fullNotification.sentAt,
+        readAt: fullNotification.readAt,
+        createdAt: fullNotification.createdAt,
+        updatedAt: fullNotification.updatedAt,
+      });
+    });
+
     it('should handle null values in optional fields', () => {
       const nullFieldsNotification = {
         ...mockNotification,
@@ -738,6 +955,27 @@ describe('PrismaNotificationBackend', () => {
       expect(result[0].sendAfter instanceof Date).toBeTruthy();
     });
 
+    it('should fetch future notifications with custom pagination', async () => {
+      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      findManyMock.mockResolvedValue([mockNotification]);
+
+      const result = await backend.getFutureNotifications(3, 25);
+
+      expect(mockPrismaClient.notification.findMany).toHaveBeenCalledWith({
+        where: {
+          status: {
+            not: NotificationStatusEnum.PENDING_SEND,
+          },
+          sendAfter: {
+            lte: expect.any(Date),
+          },
+        },
+        skip: 75,
+        take: 25,
+      });
+      expect(result).toHaveLength(1);
+    });
+
     it('should return empty array when no future notifications exist', async () => {
       const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
       findManyMock.mockResolvedValue([]);
@@ -813,6 +1051,464 @@ describe('PrismaNotificationBackend', () => {
       });
       expect(result.contextParameters).toEqual({
       param1: 'valuetest'});
+    });
+  });
+
+  describe('bulkPersistNotifications', () => {
+    it('should create multiple regular notifications', async () => {
+      const notifications = [
+        {
+          userId: 'user1',
+          notificationType: NotificationTypeEnum.EMAIL,
+          bodyTemplate: 'Body 1',
+          contextName: 'testContext' as keyof TestContexts,
+          contextParameters: { param1: 'value1' },
+          title: 'Title 1',
+          subjectTemplate: 'Subject 1',
+          extraParams: null,
+          sendAfter: null,
+        },
+        {
+          userId: 'user2',
+          notificationType: NotificationTypeEnum.EMAIL,
+          bodyTemplate: 'Body 2',
+          contextName: 'testContext' as keyof TestContexts,
+          contextParameters: { param1: 'value2' },
+          title: 'Title 2',
+          subjectTemplate: 'Subject 2',
+          extraParams: null,
+          sendAfter: null,
+        },
+      ];
+
+      const createManyMock = mockPrismaClient.notification.createMany as jest.Mock;
+      createManyMock.mockResolvedValue(['id1', 'id2']);
+
+      const result = await backend.bulkPersistNotifications(notifications);
+
+      expect(mockPrismaClient.notification.createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            user: { connect: { id: 'user1' } },
+            bodyTemplate: 'Body 1',
+          }),
+          expect.objectContaining({
+            user: { connect: { id: 'user2' } },
+            bodyTemplate: 'Body 2',
+          }),
+        ]),
+      });
+      expect(result).toEqual(['id1', 'id2']);
+    });
+
+    it('should create multiple one-off notifications', async () => {
+      const notifications = [
+        {
+          emailOrPhone: 'oneoff1@example.com',
+          firstName: 'John',
+          lastName: 'Doe',
+          notificationType: NotificationTypeEnum.EMAIL,
+          bodyTemplate: 'One-off Body 1',
+          contextName: 'testContext' as keyof TestContexts,
+          contextParameters: { param1: 'value1' },
+          title: 'One-off Title 1',
+          subjectTemplate: 'One-off Subject 1',
+          extraParams: null,
+          sendAfter: null,
+        },
+        {
+          emailOrPhone: 'oneoff2@example.com',
+          firstName: 'Jane',
+          lastName: 'Smith',
+          notificationType: NotificationTypeEnum.EMAIL,
+          bodyTemplate: 'One-off Body 2',
+          contextName: 'testContext' as keyof TestContexts,
+          contextParameters: { param1: 'value2' },
+          title: 'One-off Title 2',
+          subjectTemplate: 'One-off Subject 2',
+          extraParams: null,
+          sendAfter: null,
+        },
+      ];
+
+      const createManyMock = mockPrismaClient.notification.createMany as jest.Mock;
+      createManyMock.mockResolvedValue(['id3', 'id4']);
+
+      const result = await backend.bulkPersistNotifications(notifications);
+
+      expect(mockPrismaClient.notification.createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            emailOrPhone: 'oneoff1@example.com',
+            firstName: 'John',
+            lastName: 'Doe',
+            bodyTemplate: 'One-off Body 1',
+          }),
+          expect.objectContaining({
+            emailOrPhone: 'oneoff2@example.com',
+            firstName: 'Jane',
+            lastName: 'Smith',
+            bodyTemplate: 'One-off Body 2',
+          }),
+        ]),
+      });
+      expect(result).toEqual(['id3', 'id4']);
+    });
+
+    it('should create mix of regular and one-off notifications', async () => {
+      const notifications = [
+        {
+          userId: 'user1',
+          notificationType: NotificationTypeEnum.EMAIL,
+          bodyTemplate: 'Regular Body',
+          contextName: 'testContext' as keyof TestContexts,
+          contextParameters: { param1: 'value1' },
+          title: 'Regular Title',
+          subjectTemplate: 'Regular Subject',
+          extraParams: null,
+          sendAfter: null,
+        },
+        {
+          emailOrPhone: 'oneoff@example.com',
+          firstName: 'John',
+          lastName: 'Doe',
+          notificationType: NotificationTypeEnum.EMAIL,
+          bodyTemplate: 'One-off Body',
+          contextName: 'testContext' as keyof TestContexts,
+          contextParameters: { param1: 'value2' },
+          title: 'One-off Title',
+          subjectTemplate: 'One-off Subject',
+          extraParams: null,
+          sendAfter: null,
+        },
+      ];
+
+      const createManyMock = mockPrismaClient.notification.createMany as jest.Mock;
+      createManyMock.mockResolvedValue(['id5', 'id6']);
+
+      const result = await backend.bulkPersistNotifications(notifications);
+
+      expect(mockPrismaClient.notification.createMany).toHaveBeenCalledWith({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            user: { connect: { id: 'user1' } },
+            bodyTemplate: 'Regular Body',
+          }),
+          expect.objectContaining({
+            emailOrPhone: 'oneoff@example.com',
+            firstName: 'John',
+            lastName: 'Doe',
+            bodyTemplate: 'One-off Body',
+          }),
+        ]),
+      });
+      expect(result).toEqual(['id5', 'id6']);
+    });
+  });
+
+  describe('One-off notification methods', () => {
+    describe('persistOneOffNotification', () => {
+      it('should create a new one-off notification', async () => {
+        const input = {
+          emailOrPhone: 'oneoff@example.com',
+          firstName: 'John',
+          lastName: 'Doe',
+          notificationType: NotificationTypeEnum.EMAIL,
+          bodyTemplate: 'Test Body',
+          contextName: 'testContext' as keyof TestContexts,
+          contextParameters: { param1: 'value1' },
+          title: 'Test Title',
+          subjectTemplate: 'Test Subject',
+          extraParams: { key: 'value' },
+          sendAfter: null,
+        };
+
+        const oneOffNotification = {
+          id: '1',
+          userId: null,
+          emailOrPhone: 'oneoff@example.com',
+          firstName: 'John',
+          lastName: 'Doe',
+          notificationType: NotificationTypeEnum.EMAIL,
+          title: 'Test Title',
+          bodyTemplate: 'Test Body',
+          contextName: 'testContext',
+          contextParameters: { param1: 'value1' },
+          sendAfter: null,
+          subjectTemplate: 'Test Subject',
+          status: NotificationStatusEnum.PENDING_SEND,
+          contextUsed: null,
+          extraParams: { key: 'value' },
+          adapterUsed: null,
+          sentAt: null,
+          readAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        const createMock = mockPrismaClient.notification.create as jest.Mock;
+        createMock.mockResolvedValue(oneOffNotification);
+
+        const result = await backend.persistOneOffNotification(input);
+
+        expect(mockPrismaClient.notification.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            userId: null,
+            emailOrPhone: 'oneoff@example.com',
+            firstName: 'John',
+            lastName: 'Doe',
+            notificationType: NotificationTypeEnum.EMAIL,
+            bodyTemplate: 'Test Body',
+            status: NotificationStatusEnum.PENDING_SEND,
+          }),
+        });
+        expect(result).toMatchObject({
+          emailOrPhone: 'oneoff@example.com',
+          firstName: 'John',
+          lastName: 'Doe',
+        });
+        expect(result).not.toHaveProperty('userId');
+      });
+    });
+
+    describe('persistOneOffNotificationUpdate', () => {
+      it('should update a one-off notification', async () => {
+        const updateData = {
+          emailOrPhone: 'updated@example.com',
+          firstName: 'Jane',
+          title: 'Updated Title',
+        };
+
+        const updatedNotification = {
+          id: '1',
+          userId: null,
+          emailOrPhone: 'updated@example.com',
+          firstName: 'Jane',
+          lastName: 'Doe',
+          notificationType: NotificationTypeEnum.EMAIL,
+          title: 'Updated Title',
+          bodyTemplate: 'Test Body',
+          contextName: 'testContext',
+          contextParameters: { param1: 'value1' },
+          sendAfter: null,
+          subjectTemplate: 'Test Subject',
+          status: NotificationStatusEnum.PENDING_SEND,
+          contextUsed: null,
+          extraParams: null,
+          adapterUsed: null,
+          sentAt: null,
+          readAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        const updateMock = mockPrismaClient.notification.update as jest.Mock;
+        updateMock.mockResolvedValue(updatedNotification);
+
+        const result = await backend.persistOneOffNotificationUpdate('1', updateData);
+
+        expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
+          where: { id: '1' },
+          data: expect.objectContaining({
+            emailOrPhone: 'updated@example.com',
+            firstName: 'Jane',
+            title: 'Updated Title',
+          }),
+        });
+        expect(result.emailOrPhone).toBe('updated@example.com');
+        expect(result.firstName).toBe('Jane');
+        expect(result.title).toBe('Updated Title');
+      });
+
+      it('should allow clearing fields with empty string or null', async () => {
+        const updateData = {
+          title: '',
+          firstName: null,
+        };
+
+        const updatedNotification = {
+          id: '1',
+          userId: null,
+          emailOrPhone: 'oneoff@example.com',
+          firstName: null,
+          lastName: 'Doe',
+          notificationType: NotificationTypeEnum.EMAIL,
+          title: '',
+          bodyTemplate: 'Test Body',
+          contextName: 'testContext',
+          contextParameters: { param1: 'value1' },
+          sendAfter: null,
+          subjectTemplate: 'Test Subject',
+          status: NotificationStatusEnum.PENDING_SEND,
+          contextUsed: null,
+          extraParams: null,
+          adapterUsed: null,
+          sentAt: null,
+          readAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        const updateMock = mockPrismaClient.notification.update as jest.Mock;
+        updateMock.mockResolvedValue(updatedNotification);
+
+        const result = await backend.persistOneOffNotificationUpdate('1', updateData);
+
+        expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
+          where: { id: '1' },
+          data: {
+            title: '',
+            firstName: null,
+          },
+        });
+        expect(result.title).toBe('');
+        expect(result.firstName).toBeNull();
+      });
+    });
+
+    describe('getOneOffNotification', () => {
+      it('should get a one-off notification by id', async () => {
+        const oneOffNotification = {
+          id: '1',
+          userId: null,
+          emailOrPhone: 'oneoff@example.com',
+          firstName: 'John',
+          lastName: 'Doe',
+          notificationType: NotificationTypeEnum.EMAIL,
+          title: 'Test Title',
+          bodyTemplate: 'Test Body',
+          contextName: 'testContext',
+          contextParameters: { param1: 'value1' },
+          sendAfter: null,
+          subjectTemplate: 'Test Subject',
+          status: NotificationStatusEnum.PENDING_SEND,
+          contextUsed: null,
+          extraParams: null,
+          adapterUsed: null,
+          sentAt: null,
+          readAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+        findUniqueMock.mockResolvedValue(oneOffNotification);
+
+        const result = await backend.getOneOffNotification('1', false);
+
+        expect(mockPrismaClient.notification.findUnique).toHaveBeenCalledWith({
+          where: { id: '1' },
+        });
+        expect(result).toMatchObject({
+          emailOrPhone: 'oneoff@example.com',
+          firstName: 'John',
+          lastName: 'Doe',
+        });
+        expect(result).not.toHaveProperty('userId');
+      });
+
+      it('should return null for regular notification (has userId)', async () => {
+        const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+        findUniqueMock.mockResolvedValue(mockNotification);
+
+        const result = await backend.getOneOffNotification('1', false);
+
+        expect(result).toBeNull();
+      });
+
+      it('should return null when notification not found', async () => {
+        const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+        findUniqueMock.mockResolvedValue(null);
+
+        const result = await backend.getOneOffNotification('1', false);
+
+        expect(result).toBeNull();
+      });
+    });
+
+    describe('getAllOneOffNotifications', () => {
+      it('should fetch all one-off notifications', async () => {
+        const oneOffNotification = {
+          id: '1',
+          userId: null,
+          emailOrPhone: 'oneoff@example.com',
+          firstName: 'John',
+          lastName: 'Doe',
+          notificationType: NotificationTypeEnum.EMAIL,
+          title: 'Test Title',
+          bodyTemplate: 'Test Body',
+          contextName: 'testContext',
+          contextParameters: { param1: 'value1' },
+          sendAfter: null,
+          subjectTemplate: 'Test Subject',
+          status: NotificationStatusEnum.PENDING_SEND,
+          contextUsed: null,
+          extraParams: null,
+          adapterUsed: null,
+          sentAt: null,
+          readAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+        findManyMock.mockResolvedValue([oneOffNotification]);
+
+        const result = await backend.getAllOneOffNotifications();
+
+        expect(mockPrismaClient.notification.findMany).toHaveBeenCalledWith({
+          where: {
+            userId: null,
+            emailOrPhone: { not: null },
+          },
+        });
+        expect(result).toHaveLength(1);
+        expect(result[0]).toMatchObject({
+          emailOrPhone: 'oneoff@example.com',
+        });
+      });
+    });
+
+    describe('getOneOffNotifications', () => {
+      it('should fetch one-off notifications with pagination', async () => {
+        const oneOffNotification = {
+          id: '1',
+          userId: null,
+          emailOrPhone: 'oneoff@example.com',
+          firstName: 'John',
+          lastName: 'Doe',
+          notificationType: NotificationTypeEnum.EMAIL,
+          title: 'Test Title',
+          bodyTemplate: 'Test Body',
+          contextName: 'testContext',
+          contextParameters: { param1: 'value1' },
+          sendAfter: null,
+          subjectTemplate: 'Test Subject',
+          status: NotificationStatusEnum.PENDING_SEND,
+          contextUsed: null,
+          extraParams: null,
+          adapterUsed: null,
+          sentAt: null,
+          readAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+        findManyMock.mockResolvedValue([oneOffNotification]);
+
+        const result = await backend.getOneOffNotifications(0, 10);
+
+        expect(mockPrismaClient.notification.findMany).toHaveBeenCalledWith({
+          where: {
+            userId: null,
+            emailOrPhone: { not: null },
+          },
+          skip: 0,
+          take: 10,
+        });
+        expect(result).toHaveLength(1);
+      });
     });
   });
 });
