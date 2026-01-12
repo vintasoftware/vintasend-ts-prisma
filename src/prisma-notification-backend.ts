@@ -1,7 +1,17 @@
 import type { BaseNotificationBackend } from 'vintasend/dist/services/notification-backends/base-notification-backend';
 import type { InputJsonValue, JsonValue } from 'vintasend/dist/types/json-values';
-import type { AnyNotificationInput, DatabaseNotification, Notification, NotificationInput } from 'vintasend/dist/types/notification';
-import type { DatabaseOneOffNotification, OneOffNotificationInput, AnyNotification, AnyDatabaseNotification } from 'vintasend/dist/types/notification';
+import type {
+  AnyNotificationInput,
+  DatabaseNotification,
+  Notification,
+  NotificationInput,
+} from 'vintasend/dist/types/notification';
+import type {
+  AnyDatabaseNotification,
+  AnyNotification,
+  DatabaseOneOffNotification,
+  OneOffNotificationInput,
+} from 'vintasend/dist/types/notification';
 import type { NotificationStatus } from 'vintasend/dist/types/notification-status';
 import type { NotificationType } from 'vintasend/dist/types/notification-type';
 import type { BaseNotificationTypeConfig } from 'vintasend/dist/types/notification-type-config';
@@ -88,10 +98,10 @@ type NoExpand<T> = T extends unknown ? T : never;
 // this type assumes the passed object is entirely optional
 type AtLeast<O extends object, K extends string> = NoExpand<
   O extends unknown
-  ?
-  | (K extends keyof O ? { [P in K]: O[P] } & O : O)
-  | ({ [P in keyof O as P extends K ? K : never]-?: O[P] } & O)
-  : never
+    ?
+        | (K extends keyof O ? { [P in K]: O[P] } & O : O)
+        | ({ [P in keyof O as P extends K ? K : never]-?: O[P] } & O)
+    : never
 >;
 
 export interface BaseNotificationCreateInput<UserIdType> {
@@ -163,18 +173,20 @@ function convertJsonValueToRecord(jsonValue: JsonValue): Record<string, string |
 }
 
 export class PrismaNotificationBackend<
-  Client extends NotificationPrismaClientInterface<Config['NotificationIdType'], Config['UserIdType']>,
-  Config extends BaseNotificationTypeConfig
-> implements BaseNotificationBackend<Config> {
-  constructor(private prismaClient: Client) { }
+  Client extends NotificationPrismaClientInterface<
+    Config['NotificationIdType'],
+    Config['UserIdType']
+  >,
+  Config extends BaseNotificationTypeConfig,
+> implements BaseNotificationBackend<Config>
+{
+  constructor(private prismaClient: Client) {}
 
   /**
    * Build a where clause for status-based updates
    */
   private buildStatusWhere(
-    id: NonNullable<
-      Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
-    >['id'],
+    id: NonNullable<Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>>['id'],
     opts: { checkStatus?: NotificationStatus } = {},
   ) {
     const where: {
@@ -208,17 +220,17 @@ export class PrismaNotificationBackend<
       contextName: notification.contextName as string & keyof Config['ContextMap'],
       contextParameters: notification.contextParameters
         ? (notification.contextParameters as Parameters<
-          Config['ContextMap'][keyof Config['ContextMap']]['generate']
-        >[0])
+            Config['ContextMap'][keyof Config['ContextMap']]['generate']
+          >[0])
         : {},
       sendAfter: notification.sendAfter,
       subjectTemplate: notification.subjectTemplate,
       status: notification.status,
       contextUsed: notification.contextUsed as ReturnType<
-          Config['ContextMap'][keyof Config['ContextMap']]['generate']
-        > extends Promise<infer T> ? T : ReturnType<
-          Config['ContextMap'][keyof Config['ContextMap']]['generate']
-        >,
+        Config['ContextMap'][keyof Config['ContextMap']]['generate']
+      > extends Promise<infer T>
+        ? T
+        : ReturnType<Config['ContextMap'][keyof Config['ContextMap']]['generate']>,
       extraParams: notification.extraParams
         ? convertJsonValueToRecord(notification.extraParams)
         : null,
@@ -365,7 +377,8 @@ export class PrismaNotificationBackend<
 
     // Determine if this is transitioning between regular and one-off notification types
     const hasUserId = 'userId' in notification && notification.userId !== undefined;
-    const hasOneOffFields = 'emailOrPhone' in notification && notification.emailOrPhone !== undefined;
+    const hasOneOffFields =
+      'emailOrPhone' in notification && notification.emailOrPhone !== undefined;
 
     // Handle user / one-off fields with mutual exclusion
     if (hasUserId) {
@@ -456,27 +469,25 @@ export class PrismaNotificationBackend<
       ...(notification.userId ? { user: { connect: { id: notification.userId } } } : {}),
       ...(notification.notificationType
         ? {
-          notificationType: NotificationTypeEnum[
-            notification.notificationType as keyof typeof NotificationTypeEnum
-          ] as NotificationType,
-        }
+            notificationType: NotificationTypeEnum[
+              notification.notificationType as keyof typeof NotificationTypeEnum
+            ] as NotificationType,
+          }
         : {}),
       ...(notification.title ? { title: notification.title } : {}),
       ...(notification.bodyTemplate ? { bodyTemplate: notification.bodyTemplate } : {}),
       ...(notification.contextName ? { contextName: notification.contextName } : {}),
       ...(notification.contextParameters
         ? {
-          contextParameters: notification.contextParameters ? notification.contextParameters : {},
-        }
+            contextParameters: notification.contextParameters ? notification.contextParameters : {},
+          }
         : {}),
       ...(notification.sendAfter ? { sendAfter: notification.sendAfter } : {}),
       ...(notification.subjectTemplate ? { subjectTemplate: notification.subjectTemplate } : {}),
     } as Partial<Parameters<typeof this.prismaClient.notification.update>[0]['data']>;
   }
 
-  async getAllPendingNotifications(): Promise<
-    AnyDatabaseNotification<Config>[]
-  > {
+  async getAllPendingNotifications(): Promise<AnyDatabaseNotification<Config>[]> {
     const notifications = await this.prismaClient.notification.findMany({
       where: { status: NotificationStatusEnum.PENDING_SEND },
     });
@@ -484,9 +495,10 @@ export class PrismaNotificationBackend<
     return notifications.map((n) => this.serializeAnyNotification(n));
   }
 
-  async getPendingNotifications(page = 0, pageSize = 100): Promise<
-    AnyDatabaseNotification<Config>[]
-  > {
+  async getPendingNotifications(
+    page = 0,
+    pageSize = 100,
+  ): Promise<AnyDatabaseNotification<Config>[]> {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         status: NotificationStatusEnum.PENDING_SEND,
@@ -499,9 +511,7 @@ export class PrismaNotificationBackend<
     return notifications.map((n) => this.serializeAnyNotification(n));
   }
 
-  async getAllFutureNotifications(): Promise<
-    AnyDatabaseNotification<Config>[]
-  > {
+  async getAllFutureNotifications(): Promise<AnyDatabaseNotification<Config>[]> {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         status: { not: NotificationStatusEnum.PENDING_SEND },
@@ -512,9 +522,10 @@ export class PrismaNotificationBackend<
     return notifications.map((n) => this.serializeAnyNotification(n));
   }
 
-  async getFutureNotifications(page = 0, pageSize = 100): Promise<
-    AnyDatabaseNotification<Config>[]
-  > {
+  async getFutureNotifications(
+    page = 0,
+    pageSize = 100,
+  ): Promise<AnyDatabaseNotification<Config>[]> {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         status: { not: NotificationStatusEnum.PENDING_SEND },
@@ -603,9 +614,7 @@ export class PrismaNotificationBackend<
     notificationId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
-    notification: Partial<
-      Omit<DatabaseNotification<Config>, 'id'>
-    >,
+    notification: Partial<Omit<DatabaseNotification<Config>, 'id'>>,
   ): Promise<DatabaseNotification<Config>> {
     const updated = await this.prismaClient.notification.update({
       where: {
@@ -632,9 +641,7 @@ export class PrismaNotificationBackend<
     notificationId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
-    notification: Partial<
-      Omit<DatabaseOneOffNotification<Config>, 'id'>
-    >,
+    notification: Partial<Omit<DatabaseOneOffNotification<Config>, 'id'>>,
   ): Promise<DatabaseOneOffNotification<Config>> {
     const updated = await this.prismaClient.notification.update({
       where: { id: notificationId as Config['NotificationIdType'] },
@@ -674,7 +681,10 @@ export class PrismaNotificationBackend<
     return notifications.map((n) => this.serializeOneOffNotification(n));
   }
 
-  async getOneOffNotifications(page: number, pageSize: number): Promise<DatabaseOneOffNotification<Config>[]> {
+  async getOneOffNotifications(
+    page: number,
+    pageSize: number,
+  ): Promise<DatabaseOneOffNotification<Config>[]> {
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         userId: null,
@@ -848,7 +858,7 @@ export class PrismaNotificationBackend<
   ): Promise<void> {
     await this.prismaClient.notification.update({
       where: { id: notificationId as Config['NotificationIdType'] },
-      data: { contextUsed: context }
+      data: { contextUsed: context },
     });
   }
 
@@ -856,19 +866,18 @@ export class PrismaNotificationBackend<
     notifications: Omit<AnyNotification<Config>, 'id'>[],
   ): Promise<Config['NotificationIdType'][]> {
     return this.prismaClient.notification.createMany({
-      data: notifications.map((notification) =>
-        this.deserializeNotification(notification),
-      ),
+      data: notifications.map((notification) => this.deserializeNotification(notification)),
     });
   }
 }
 
-export class PrismaNotificationBackendFactory<
-  Config extends BaseNotificationTypeConfig
-> {
-  create<Client extends NotificationPrismaClientInterface<Config['NotificationIdType'], Config['UserIdType']>>(
-    prismaClient: Client,
-  ) {
+export class PrismaNotificationBackendFactory<Config extends BaseNotificationTypeConfig> {
+  create<
+    Client extends NotificationPrismaClientInterface<
+      Config['NotificationIdType'],
+      Config['UserIdType']
+    >,
+  >(prismaClient: Client) {
     return new PrismaNotificationBackend<Client, Config>(prismaClient);
   }
 }

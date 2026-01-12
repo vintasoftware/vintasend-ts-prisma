@@ -1,7 +1,14 @@
+import type {
+  AnyDatabaseNotification,
+  DatabaseNotification,
+  DatabaseOneOffNotification,
+} from 'vintasend/dist/types/notification';
 import { PrismaNotificationBackendFactory } from '../index';
 import { NotificationStatusEnum, NotificationTypeEnum } from '../prisma-notification-backend';
-import type { NotificationPrismaClientInterface, PrismaNotificationBackend } from '../prisma-notification-backend';
-import type { DatabaseNotification, AnyDatabaseNotification, DatabaseOneOffNotification } from 'vintasend/dist/types/notification';
+import type {
+  NotificationPrismaClientInterface,
+  PrismaNotificationBackend,
+} from '../prisma-notification-backend';
 
 type TestContexts = {
   testContext: {
@@ -13,7 +20,8 @@ describe('PrismaNotificationBackend', () => {
   let mockPrismaClient: jest.Mocked<NotificationPrismaClientInterface<string, string>>;
   let backend: PrismaNotificationBackend<
     // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-    typeof mockPrismaClient, any
+    typeof mockPrismaClient,
+    any
   >;
 
   beforeEach(() => {
@@ -128,7 +136,7 @@ describe('PrismaNotificationBackend', () => {
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
         where: {
           id: '1',
-          "status": NotificationStatusEnum.PENDING_SEND,
+          status: NotificationStatusEnum.PENDING_SEND,
         },
         data: {
           status: NotificationStatusEnum.SENT,
@@ -292,7 +300,7 @@ describe('PrismaNotificationBackend', () => {
       findUniqueMock.mockResolvedValue(oneOffNotification);
 
       await expect(backend.markAsRead('1')).rejects.toThrow(
-        'Cannot mark one-off notification as read'
+        'Cannot mark one-off notification as read',
       );
 
       expect(mockPrismaClient.notification.findUnique).toHaveBeenCalledWith({
@@ -306,9 +314,7 @@ describe('PrismaNotificationBackend', () => {
       const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
       findUniqueMock.mockResolvedValue(null);
 
-      await expect(backend.markAsRead('non-existent-id')).rejects.toThrow(
-        'Notification not found'
-      );
+      await expect(backend.markAsRead('non-existent-id')).rejects.toThrow('Notification not found');
 
       expect(mockPrismaClient.notification.findUnique).toHaveBeenCalledWith({
         where: { id: 'non-existent-id' },
@@ -437,7 +443,7 @@ describe('PrismaNotificationBackend', () => {
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
         where: {
           id: '1',
-          "status": NotificationStatusEnum.PENDING_SEND,
+          status: NotificationStatusEnum.PENDING_SEND,
         },
         data: {
           status: NotificationStatusEnum.FAILED,
@@ -524,7 +530,10 @@ describe('PrismaNotificationBackend', () => {
   describe('cancelNotification', () => {
     it('should cancel a notification', async () => {
       const updateMock = mockPrismaClient.notification.update as jest.Mock;
-      updateMock.mockResolvedValue({ ...mockNotification, status: NotificationStatusEnum.CANCELLED });
+      updateMock.mockResolvedValue({
+        ...mockNotification,
+        status: NotificationStatusEnum.CANCELLED,
+      });
 
       await backend.cancelNotification('1');
 
@@ -826,7 +835,7 @@ describe('PrismaNotificationBackend', () => {
       };
 
       expect(() => backend.serializeNotification(invalidNotification)).toThrow(
-        'Invalid notification: missing both userId and emailOrPhone'
+        'Invalid notification: missing both userId and emailOrPhone',
       );
     });
 
@@ -1060,11 +1069,13 @@ describe('PrismaNotificationBackend', () => {
         where: { id: '1' },
         data: expect.objectContaining({
           contextParameters: {
-      param1: 'valuetest'},
+            param1: 'valuetest',
+          },
         }),
       });
       expect(result.contextParameters).toEqual({
-      param1: 'valuetest'});
+        param1: 'valuetest',
+      });
     });
   });
 
@@ -1086,7 +1097,7 @@ describe('PrismaNotificationBackend', () => {
 
       // Should throw validation error
       await expect(backend.bulkPersistNotifications(notifications)).rejects.toThrow(
-        'Invalid notification: missing both userId and emailOrPhone'
+        'Invalid notification: missing both userId and emailOrPhone',
       );
     });
 
@@ -1224,7 +1235,8 @@ describe('PrismaNotificationBackend', () => {
       });
 
       // Should not include one-off fields when userId is present
-      const callData = (mockPrismaClient.notification.createMany as jest.Mock).mock.calls[0][0].data[0];
+      const callData = (mockPrismaClient.notification.createMany as jest.Mock).mock.calls[0][0]
+        .data[0];
       expect(callData).not.toHaveProperty('emailOrPhone');
       expect(callData).not.toHaveProperty('firstName');
       expect(callData).not.toHaveProperty('lastName');
