@@ -98,12 +98,9 @@ describe('PrismaNotificationBackend - Attachments', () => {
     };
 
     mockAttachmentManager = {
-      processAttachments: jest.fn(),
       reconstructAttachmentFile: jest.fn(),
       uploadFile: jest.fn(),
-      getFile: jest.fn(),
       deleteFile: jest.fn(),
-      findFileByChecksum: jest.fn(),
       detectContentType: jest.fn(),
       calculateChecksum: jest.fn(),
       fileToBuffer: jest.fn(),
@@ -270,17 +267,17 @@ describe('PrismaNotificationBackend - Attachments', () => {
         updatedAt: new Date(),
       };
 
-      (mockAttachmentManager.processAttachments as jest.Mock).mockResolvedValue({
-        fileRecords: [fileRecord],
-        attachmentData: [{ fileId: 'file-123', description: undefined }],
-      });
+      // Mock attachment manager methods for processing inline upload
+      (mockAttachmentManager.fileToBuffer as jest.Mock).mockResolvedValue(Buffer.from('test content'));
+      (mockAttachmentManager.calculateChecksum as jest.Mock).mockReturnValue('abc123');
+      (mockAttachmentManager.uploadFile as jest.Mock).mockResolvedValue(fileRecord);
 
       (mockPrismaClient.notification.create as jest.Mock).mockResolvedValue({
         ...mockNotification,
         attachments: [],
       });
 
-      (mockPrismaClient.attachmentFile.findUnique as jest.Mock).mockResolvedValue(null);
+      (mockPrismaClient.attachmentFile.findUnique as jest.Mock).mockResolvedValue(null); // No existing file with checksum
       (mockPrismaClient.attachmentFile.create as jest.Mock).mockResolvedValue(
         mockAttachmentFile,
       );
@@ -303,9 +300,13 @@ describe('PrismaNotificationBackend - Attachments', () => {
 
       const result = await backend.persistNotification(input);
 
-      expect(mockAttachmentManager.processAttachments).toHaveBeenCalledWith(
-        [attachmentInput],
-        '1',
+      // Verify attachment manager methods were called
+      expect(mockAttachmentManager.fileToBuffer).toHaveBeenCalledWith(Buffer.from('test content'));
+      expect(mockAttachmentManager.calculateChecksum).toHaveBeenCalledWith(Buffer.from('test content'));
+      expect(mockAttachmentManager.uploadFile).toHaveBeenCalledWith(
+        Buffer.from('test content'),
+        'test.pdf',
+        'application/pdf'
       );
       expect(mockPrismaClient.attachmentFile.create).toHaveBeenCalled();
       expect(mockPrismaClient.notificationAttachment.create).toHaveBeenCalled();
@@ -343,11 +344,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
         updatedAt: new Date(),
       };
 
-      (mockAttachmentManager.processAttachments as jest.Mock).mockResolvedValue({
-        fileRecords: [fileRecord],
-        attachmentData: [{ fileId: 'file-123', description: 'Referenced file' }],
-      });
-
+      // For file reference, no upload is needed
       (mockPrismaClient.notification.create as jest.Mock).mockResolvedValue({
         ...mockNotification,
         attachments: [],
@@ -375,10 +372,9 @@ describe('PrismaNotificationBackend - Attachments', () => {
 
       const result = await backend.persistNotification(input);
 
-      expect(mockAttachmentManager.processAttachments).toHaveBeenCalledWith(
-        [attachmentInput],
-        '1',
-      );
+      // For file reference, no upload methods should be called
+      expect(mockAttachmentManager.uploadFile).not.toHaveBeenCalled();
+      expect(mockAttachmentManager.fileToBuffer).not.toHaveBeenCalled();
       // Should not create file record if it already exists
       expect(mockPrismaClient.attachmentFile.create).not.toHaveBeenCalled();
       expect(mockPrismaClient.notificationAttachment.create).toHaveBeenCalled();
@@ -405,7 +401,9 @@ describe('PrismaNotificationBackend - Attachments', () => {
 
       const result = await backend.persistNotification(input);
 
-      expect(mockAttachmentManager.processAttachments).not.toHaveBeenCalled();
+      // No attachment methods should be called when there are no attachments
+      expect(mockAttachmentManager.uploadFile).not.toHaveBeenCalled();
+      expect(mockAttachmentManager.fileToBuffer).not.toHaveBeenCalled();
       expect(result.attachments).toBeUndefined();
     });
 
@@ -477,10 +475,10 @@ describe('PrismaNotificationBackend - Attachments', () => {
         updatedAt: new Date(),
       };
 
-      (mockAttachmentManager.processAttachments as jest.Mock).mockResolvedValue({
-        fileRecords: [fileRecord],
-        attachmentData: [{ fileId: 'file-123', description: undefined }],
-      });
+      // Mock attachment manager methods for processing inline upload
+      (mockAttachmentManager.fileToBuffer as jest.Mock).mockResolvedValue(Buffer.from('test content'));
+      (mockAttachmentManager.calculateChecksum as jest.Mock).mockReturnValue('def456');
+      (mockAttachmentManager.uploadFile as jest.Mock).mockResolvedValue(fileRecord);
 
       const oneOffNotification = {
         ...mockNotification,
@@ -526,7 +524,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
 
       const result = await backend.persistOneOffNotification(input);
 
-      expect(mockAttachmentManager.processAttachments).toHaveBeenCalled();
+      expect(mockAttachmentManager.uploadFile).toHaveBeenCalled();
       expect(result.attachments).toBeDefined();
       expect(result.attachments).toHaveLength(1);
     });

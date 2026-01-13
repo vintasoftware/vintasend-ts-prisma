@@ -268,6 +268,13 @@ export class PrismaNotificationBackend<
   ) {}
 
   /**
+   * Inject attachment manager (called by VintaSend when both service and backend exist)
+   */
+  injectAttachmentManager(manager: BaseAttachmentManager): void {
+    this.attachmentManager = manager;
+  }
+
+  /**
    * Build a where clause for status-based updates
    */
   private buildStatusWhere(
@@ -1034,6 +1041,20 @@ export class PrismaNotificationBackend<
     return this.serializeAttachmentFileRecord(file);
   }
 
+  /**
+   * Find an attachment file by checksum for deduplication.
+   * This allows the backend to check if a file already exists before uploading.
+   */
+  async findAttachmentFileByChecksum(checksum: string): Promise<AttachmentFileRecord | null> {
+    const file = await this.prismaClient.attachmentFile.findUnique({
+      where: { checksum },
+    });
+
+    if (!file) return null;
+
+    return this.serializeAttachmentFileRecord(file);
+  }
+
   async deleteAttachmentFile(fileId: string): Promise<void> {
     await this.prismaClient.attachmentFile.delete({
       where: { id: fileId },
@@ -1075,7 +1096,9 @@ export class PrismaNotificationBackend<
   }
 
   /**
-   * Process and store attachments for a notification
+   * Process and store attachments for a notification.
+   * Handles both new file uploads and references to existing files.
+   * Uses attachmentManager for checksum calculation and storage operations.
    * @private
    */
   private async processAndStoreAttachments(
@@ -1086,44 +1109,63 @@ export class PrismaNotificationBackend<
       throw new Error('AttachmentManager is required but not provided');
     }
 
-    // Process attachments using AttachmentManager
-    const { fileRecords, attachmentData } = await this.attachmentManager.processAttachments(
-      attachments,
-      String(notificationId),
-    );
+    const { isAttachmentReference } = await import('vintasend/dist/types/attachment');
 
-    // Store attachment records in database
-    for (let i = 0; i < fileRecords.length; i++) {
-      const fileRecord = fileRecords[i];
-      const data = attachmentData[i];
+    // Process each attachment
+    for (const att of attachments) {
+      if (isAttachmentReference(att)) {
+        // Reference existing file - just create the notification link
+        const fileRecord = await this.getAttachmentFile(att.fileId);
+        if (!fileRecord) {
+          throw new Error(`Referenced file ${att.fileId} not found`);
+        }
 
-      // Check if file already exists in database
-      let existingFile = await this.prismaClient.attachmentFile.findUnique({
-        where: { id: fileRecord.id },
-      });
-
-      // Create file record if it doesn't exist
-      if (!existingFile) {
-        await this.prismaClient.attachmentFile.create({
+        // Create notification attachment link
+        await this.prismaClient.notificationAttachment.create({
           data: {
-            id: fileRecord.id,
-            filename: fileRecord.filename,
-            contentType: fileRecord.contentType,
-            size: fileRecord.size,
-            checksum: fileRecord.checksum,
-            storageMetadata: fileRecord.storageMetadata as InputJsonValue,
+            notificationId,
+            fileId: att.fileId,
+            description: att.description ?? null,
+          },
+        });
+      } else {
+        // Upload new file with deduplication
+        const buffer = await this.attachmentManager.fileToBuffer(att.file);
+        const checksum = this.attachmentManager.calculateChecksum(buffer);
+
+        // Check if file already exists in database by checksum
+        let fileRecord = await this.findAttachmentFileByChecksum(checksum);
+
+        if (!fileRecord) {
+          // Upload new file to storage
+          fileRecord = await this.attachmentManager.uploadFile(
+            att.file,
+            att.filename,
+            att.contentType,
+          );
+
+          // Store file record in database
+          await this.prismaClient.attachmentFile.create({
+            data: {
+              id: fileRecord.id,
+              filename: fileRecord.filename,
+              contentType: fileRecord.contentType,
+              size: fileRecord.size,
+              checksum: fileRecord.checksum,
+              storageMetadata: fileRecord.storageMetadata as InputJsonValue,
+            },
+          });
+        }
+
+        // Create notification attachment link
+        await this.prismaClient.notificationAttachment.create({
+          data: {
+            notificationId,
+            fileId: fileRecord.id,
+            description: att.description ?? null,
           },
         });
       }
-
-      // Create notification attachment link
-      await this.prismaClient.notificationAttachment.create({
-        data: {
-          notificationId,
-          fileId: data.fileId,
-          description: data.description,
-        },
-      });
     }
   }
 
