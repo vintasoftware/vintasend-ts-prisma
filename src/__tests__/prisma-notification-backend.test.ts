@@ -33,6 +33,17 @@ describe('PrismaNotificationBackend', () => {
         update: jest.fn(),
         findUnique: jest.fn(),
       },
+      attachmentFile: {
+        create: jest.fn(),
+        findUnique: jest.fn(),
+        delete: jest.fn(),
+        findMany: jest.fn(),
+      },
+      notificationAttachment: {
+        create: jest.fn(),
+        findMany: jest.fn(),
+        delete: jest.fn(),
+      },
     };
 
     backend = new PrismaNotificationBackendFactory().create(mockPrismaClient);
@@ -108,6 +119,13 @@ describe('PrismaNotificationBackend', () => {
           notificationType: NotificationTypeEnum.EMAIL,
           bodyTemplate: 'Test Body',
         }),
+        include: {
+          attachments: {
+            include: {
+              attachmentFile: true,
+            },
+          },
+        },
       });
       expect(result).toMatchObject({
         id: '1',
@@ -555,6 +573,13 @@ describe('PrismaNotificationBackend', () => {
 
       expect(mockPrismaClient.notification.findUnique).toHaveBeenCalledWith({
         where: { id: '1' },
+        include: {
+          attachments: {
+            include: {
+              attachmentFile: true,
+            },
+          },
+        },
       });
       expect(result).toMatchObject({
         id: '1',
@@ -1351,6 +1376,13 @@ describe('PrismaNotificationBackend', () => {
             bodyTemplate: 'Test Body',
             status: NotificationStatusEnum.PENDING_SEND,
           }),
+          include: {
+            attachments: {
+              include: {
+                attachmentFile: true,
+              },
+            },
+          },
         });
         expect(result).toMatchObject({
           emailOrPhone: 'oneoff@example.com',

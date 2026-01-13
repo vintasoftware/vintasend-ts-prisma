@@ -38,10 +38,45 @@ model Notification {
   readAt                      DateTime?
   createdAt                   DateTime                  @default(now())
   updatedAt                   DateTime                  @updatedAt
+  // Attachments
+  attachments                 NotificationAttachment[]
 
   @@index([status, sendAfter])
   @@index([userId])
   @@index([emailOrPhone])
+}
+
+// Reusable attachment files (stored once, referenced many times)
+model AttachmentFile {
+  id                          String                    @id @default(uuid())
+  filename                    String
+  contentType                 String
+  size                        Int
+  checksum                    String                    @unique // For deduplication
+  storageMetadata             Json                      @default("{}")
+  createdAt                   DateTime                  @default(now())
+  updatedAt                   DateTime                  @updatedAt
+  
+  // Relations
+  notificationAttachments     NotificationAttachment[]
+  
+  @@index([checksum])
+}
+
+// Join table linking notifications to attachment files
+model NotificationAttachment {
+  id                          String                    @id @default(uuid())
+  notification                Notification              @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  notificationId              Int
+  attachmentFile              AttachmentFile            @relation(fields: [fileId], references: [id], onDelete: Restrict)
+  fileId                      String
+  description                 String?                   // Notification-specific description
+  createdAt                   DateTime                  @default(now())
+  updatedAt                   DateTime                  @updatedAt
+
+  @@unique([notificationId, fileId]) // Can't attach same file twice to same notification
+  @@index([notificationId])
+  @@index([fileId])
 }
 
 enum NotificationType {
