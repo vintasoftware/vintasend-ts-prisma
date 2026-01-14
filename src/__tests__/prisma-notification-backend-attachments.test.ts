@@ -80,7 +80,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
       notification: {
         findMany: jest.fn(),
         create: jest.fn(),
-        createMany: jest.fn(),
+        createManyAndReturn: jest.fn(),
         update: jest.fn(),
         findUnique: jest.fn(),
       },

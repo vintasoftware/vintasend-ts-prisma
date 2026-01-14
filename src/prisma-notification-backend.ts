@@ -84,12 +84,18 @@ export interface PrismaNotificationAttachmentModel {
   description: string | null;
   createdAt: Date;
   updatedAt: Date;
-  attachmentFile: PrismaAttachmentFileModel;
+  attachmentFile?: PrismaAttachmentFileModel;
 }
+
+// Helper type for notification data that matches Prisma's pattern
+type NotificationData<UserIdType> = BaseNotificationCreateInput<UserIdType> & (
+  | { user: { connect: { id: UserIdType } }; userId?: never }
+  | { userId: UserIdType | null; user?: never }
+);
 
 export interface NotificationPrismaClientInterface<NotificationIdType, UserIdType> {
   notification: {
-    findMany(args: {
+    findMany(args?: {
       where?: {
         status?: NotificationStatus | { not: NotificationStatus };
         sendAfter?: { lte: Date } | null;
@@ -105,18 +111,18 @@ export interface NotificationPrismaClientInterface<NotificationIdType, UserIdTyp
       };
     }): Promise<PrismaNotificationModel<NotificationIdType, UserIdType>[]>;
     create(args: {
-      data: BaseNotificationCreateInput<UserIdType>;
+      data: PrismaNotificationCreateData<UserIdType>;
       include?: {
         user?: boolean;
         attachments?: boolean | { include: { attachmentFile: boolean } };
       };
     }): Promise<PrismaNotificationModel<NotificationIdType, UserIdType>>;
-    createMany(args: {
-      data: BaseNotificationCreateInput<UserIdType>[];
-    }): Promise<NotificationIdType[]>;
+    createManyAndReturn(args: {
+      data: PrismaNotificationCreateData<UserIdType>[];
+    }): Promise<PrismaNotificationModel<NotificationIdType, UserIdType>[]>;
     update(args: {
       where: { id: NotificationIdType };
-      data: Partial<BaseNotificationUpdateInput<UserIdType>>;
+      data: BaseNotificationUpdateInput<UserIdType>;
       include?: {
         user?: boolean;
         attachments?: boolean | { include: { attachmentFile: boolean } };
@@ -150,6 +156,7 @@ export interface NotificationPrismaClientInterface<NotificationIdType, UserIdTyp
     findMany(args?: {
       where?: {
         notificationAttachments?: { none: object };
+        createdAt?: { lt: Date };
       };
     }): Promise<PrismaAttachmentFileModel[]>;
   };
@@ -187,21 +194,6 @@ type AtLeast<O extends object, K extends string> = NoExpand<
 >;
 
 export interface BaseNotificationCreateInput<UserIdType> {
-  // Regular notification (with user) - make user optional for one-off notifications
-  user?: {
-    connect?: AtLeast<
-      {
-        id?: UserIdType;
-        email?: string;
-      },
-      'id' | 'email'
-    >;
-  };
-  userId?: UserIdType | null; // Allow explicitly setting userId to null for one-off notifications
-  // One-off notification fields (when user is not provided)
-  emailOrPhone?: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
   // Common fields
   notificationType: NotificationType;
   title?: string | null;
@@ -216,7 +208,16 @@ export interface BaseNotificationCreateInput<UserIdType> {
   adapterUsed?: string | null;
   sentAt?: Date | null;
   readAt?: Date | null;
+  emailOrPhone?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
 }
+
+// Prisma-compatible union type for creating notifications
+export type PrismaNotificationCreateData<UserIdType> = BaseNotificationCreateInput<UserIdType> & (
+  | { user: { connect: { id: UserIdType } }; userId?: never }
+  | { userId: UserIdType | null; user?: never }
+);
 
 export interface BaseNotificationUpdateInput<UserIdType> {
   user?: {
@@ -398,7 +399,7 @@ export class PrismaNotificationBackend<
    */
   private buildCreateData(
     notification: AnyNotificationInput<Config> | Omit<AnyNotificationInput<Config>, 'id'>,
-  ): BaseNotificationCreateInput<Config['UserIdType']> {
+  ): PrismaNotificationCreateData<Config['UserIdType']> {
     const hasUserId = 'userId' in notification && notification.userId != null;
     const hasEmailOrPhone = 'emailOrPhone' in notification && notification.emailOrPhone != null;
 
@@ -420,15 +421,15 @@ export class PrismaNotificationBackend<
       sendAfter: notification.sendAfter,
       subjectTemplate: notification.subjectTemplate,
       extraParams: notification.extraParams as InputJsonValue,
+      emailOrPhone: 'emailOrPhone' in notification ? notification.emailOrPhone : null,
+      firstName: ('firstName' in notification ? notification.firstName : null) ?? null,
+      lastName: ('lastName' in notification ? notification.lastName : null) ?? null,
     };
 
     if (isOneOff) {
       return {
         ...base,
         userId: null,
-        emailOrPhone: 'emailOrPhone' in notification ? notification.emailOrPhone : '',
-        firstName: ('firstName' in notification ? notification.firstName : null) ?? null,
-        lastName: ('lastName' in notification ? notification.lastName : null) ?? null,
         status: NotificationStatusEnum.PENDING_SEND,
       };
     }
@@ -448,7 +449,7 @@ export class PrismaNotificationBackend<
    */
   private deserializeRegularNotification(
     notification: NotificationInput<Config>,
-  ): BaseNotificationCreateInput<Config['UserIdType']> {
+  ): PrismaNotificationCreateData<Config['UserIdType']> {
     return this.buildCreateData(notification);
   }
 
@@ -457,7 +458,7 @@ export class PrismaNotificationBackend<
    */
   private buildOneOffNotificationData(
     notification: OneOffNotificationInput<Config>,
-  ): BaseNotificationCreateInput<Config['UserIdType']> {
+  ): PrismaNotificationCreateData<Config['UserIdType']> {
     return this.buildCreateData(notification);
   }
 
@@ -554,7 +555,7 @@ export class PrismaNotificationBackend<
 
   deserializeNotification(
     notification: AnyNotificationInput<Config> | Omit<AnyNotificationInput<Config>, 'id'>,
-  ): BaseNotificationCreateInput<Config['UserIdType']> {
+  ): PrismaNotificationCreateData<Config['UserIdType']> {
     return this.buildCreateData(notification);
   }
 
@@ -1024,9 +1025,10 @@ export class PrismaNotificationBackend<
   async bulkPersistNotifications(
     notifications: Omit<AnyNotification<Config>, 'id'>[],
   ): Promise<Config['NotificationIdType'][]> {
-    return this.prismaClient.notification.createMany({
+    const created = await this.prismaClient.notification.createManyAndReturn({
       data: notifications.map((notification) => this.deserializeNotification(notification)),
     });
+    return created.map((n) => n.id);
   }
 
   /* Attachment management methods */
@@ -1195,6 +1197,10 @@ export class PrismaNotificationBackend<
   ): StoredAttachment {
     if (!this.attachmentManager) {
       throw new Error('AttachmentManager is required to reconstruct attachment files');
+    }
+
+    if (!attachment.attachmentFile) {
+      throw new Error('AttachmentFile is required to reconstruct stored attachment');
     }
 
     const fileRecord = this.serializeAttachmentFileRecord(attachment.attachmentFile);
