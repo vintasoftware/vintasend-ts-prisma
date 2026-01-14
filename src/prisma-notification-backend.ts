@@ -421,9 +421,12 @@ export class PrismaNotificationBackend<
       sendAfter: notification.sendAfter,
       subjectTemplate: notification.subjectTemplate,
       extraParams: notification.extraParams as InputJsonValue,
-      emailOrPhone: 'emailOrPhone' in notification ? notification.emailOrPhone : null,
-      firstName: ('firstName' in notification ? notification.firstName : null) ?? null,
-      lastName: ('lastName' in notification ? notification.lastName : null) ?? null,
+      // Only include one-off fields if this is actually a one-off notification
+      ...(isOneOff && {
+        emailOrPhone: 'emailOrPhone' in notification ? notification.emailOrPhone : null,
+        firstName: 'firstName' in notification ? notification.firstName ?? null : null,
+        lastName: 'lastName' in notification ? notification.lastName ?? null : null,
+      }),
     };
 
     if (isOneOff) {

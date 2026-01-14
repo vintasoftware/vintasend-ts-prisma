@@ -29,7 +29,7 @@ describe('PrismaNotificationBackend', () => {
       notification: {
         findMany: jest.fn(),
         create: jest.fn(),
-        createMany: jest.fn(),
+        createManyAndReturn: jest.fn(),
         update: jest.fn(),
         findUnique: jest.fn(),
       },
@@ -1152,12 +1152,12 @@ describe('PrismaNotificationBackend', () => {
         },
       ];
 
-      const createManyMock = mockPrismaClient.notification.createMany as jest.Mock;
-      createManyMock.mockResolvedValue(['id1', 'id2']);
+      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as jest.Mock;
+      createManyAndReturnMock.mockResolvedValue([{ id: 'id1' }, { id: 'id2' }]);
 
       const result = await backend.bulkPersistNotifications(notifications);
 
-      expect(mockPrismaClient.notification.createMany).toHaveBeenCalledWith({
+      expect(mockPrismaClient.notification.createManyAndReturn).toHaveBeenCalledWith({
         data: expect.arrayContaining([
           expect.objectContaining({
             user: { connect: { id: 'user1' } },
@@ -1202,12 +1202,12 @@ describe('PrismaNotificationBackend', () => {
         },
       ];
 
-      const createManyMock = mockPrismaClient.notification.createMany as jest.Mock;
-      createManyMock.mockResolvedValue(['id3', 'id4']);
+      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as jest.Mock;
+      createManyAndReturnMock.mockResolvedValue([{ id: 'id3' }, { id: 'id4' }]);
 
       const result = await backend.bulkPersistNotifications(notifications);
 
-      expect(mockPrismaClient.notification.createMany).toHaveBeenCalledWith({
+      expect(mockPrismaClient.notification.createManyAndReturn).toHaveBeenCalledWith({
         data: expect.arrayContaining([
           expect.objectContaining({
             emailOrPhone: 'oneoff1@example.com',
@@ -1244,13 +1244,13 @@ describe('PrismaNotificationBackend', () => {
         },
       ];
 
-      const createManyMock = mockPrismaClient.notification.createMany as jest.Mock;
-      createManyMock.mockResolvedValue(['id-both']);
+      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as jest.Mock;
+      createManyAndReturnMock.mockResolvedValue([{ id: 'id-both' }]);
 
       const result = await backend.bulkPersistNotifications(notifications);
 
       // userId should take precedence, creating a regular notification
-      expect(mockPrismaClient.notification.createMany).toHaveBeenCalledWith({
+      expect(mockPrismaClient.notification.createManyAndReturn).toHaveBeenCalledWith({
         data: expect.arrayContaining([
           expect.objectContaining({
             user: { connect: { id: 'user-with-both' } },
@@ -1260,7 +1260,7 @@ describe('PrismaNotificationBackend', () => {
       });
 
       // Should not include one-off fields when userId is present
-      const callData = (mockPrismaClient.notification.createMany as jest.Mock).mock.calls[0][0]
+      const callData = (mockPrismaClient.notification.createManyAndReturn as jest.Mock).mock.calls[0][0]
         .data[0];
       expect(callData).not.toHaveProperty('emailOrPhone');
       expect(callData).not.toHaveProperty('firstName');
@@ -1298,12 +1298,12 @@ describe('PrismaNotificationBackend', () => {
         },
       ];
 
-      const createManyMock = mockPrismaClient.notification.createMany as jest.Mock;
-      createManyMock.mockResolvedValue(['id5', 'id6']);
+      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as jest.Mock;
+      createManyAndReturnMock.mockResolvedValue([{ id: 'id5' }, { id: 'id6' }]);
 
       const result = await backend.bulkPersistNotifications(notifications);
 
-      expect(mockPrismaClient.notification.createMany).toHaveBeenCalledWith({
+      expect(mockPrismaClient.notification.createManyAndReturn).toHaveBeenCalledWith({
         data: expect.arrayContaining([
           expect.objectContaining({
             user: { connect: { id: 'user1' } },
