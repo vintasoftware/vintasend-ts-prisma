@@ -26,6 +26,9 @@ describe('PrismaNotificationBackend', () => {
 
   beforeEach(() => {
     mockPrismaClient = {
+      $transaction: jest.fn(<R>(fn: (prisma: typeof mockPrismaClient) => Promise<R>) =>
+        fn(mockPrismaClient),
+      ) as any,
       notification: {
         findMany: jest.fn(),
         create: jest.fn(),
