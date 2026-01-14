@@ -43,6 +43,7 @@ describe('PrismaNotificationBackend', () => {
         create: jest.fn(),
         findMany: jest.fn(),
         delete: jest.fn(),
+        deleteMany: jest.fn(),
       },
     };
 
