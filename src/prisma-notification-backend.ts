@@ -20,6 +20,7 @@ import type {
   StoredAttachment,
   NotificationAttachment,
 } from 'vintasend/dist/types/attachment';
+import { isAttachmentReference } from 'vintasend/dist/types/attachment';
 import type { BaseAttachmentManager } from 'vintasend/dist/services/attachment-manager/base-attachment-manager';
 
 export const NotificationStatusEnum = {
@@ -86,12 +87,6 @@ export interface PrismaNotificationAttachmentModel {
   updatedAt: Date;
   attachmentFile?: PrismaAttachmentFileModel;
 }
-
-// Helper type for notification data that matches Prisma's pattern
-type NotificationData<UserIdType> = BaseNotificationCreateInput<UserIdType> & (
-  | { user: { connect: { id: UserIdType } }; userId?: never }
-  | { userId: UserIdType | null; user?: never }
-);
 
 export interface NotificationPrismaClientInterface<NotificationIdType, UserIdType> {
   notification: {
@@ -332,10 +327,11 @@ export class PrismaNotificationBackend<
       readAt: notification.readAt,
       createdAt: notification.createdAt,
       updatedAt: notification.updatedAt,
-      // Serialize attachments if present
-      attachments: notification.attachments
-        ? notification.attachments.map((att) => this.serializeStoredAttachment(att))
-        : undefined,
+      // Serialize attachments if present and attachmentManager is available
+      attachments:
+        notification.attachments && this.attachmentManager
+          ? notification.attachments.map((att) => this.serializeStoredAttachment(att))
+          : undefined,
     };
 
     // Check if this is a one-off notification (has emailOrPhone but no userId)
@@ -1061,6 +1057,19 @@ export class PrismaNotificationBackend<
   }
 
   async deleteAttachmentFile(fileId: string): Promise<void> {
+    const file = await this.prismaClient.attachmentFile.findUnique({
+      where: { id: fileId },
+    });
+
+    // If there's no DB record, there's nothing to delete
+    if (!file) return;
+
+    // First delete the underlying stored file so DB and storage stay in sync
+    if (this.attachmentManager) {
+      await this.attachmentManager.deleteFile(fileId);
+    }
+
+    // Only after successful storage deletion, remove the DB record
     await this.prismaClient.attachmentFile.delete({
       where: { id: fileId },
     });
@@ -1095,6 +1104,21 @@ export class PrismaNotificationBackend<
     notificationId: Config['NotificationIdType'],
     attachmentId: string,
   ): Promise<void> {
+    // First verify the attachment belongs to this notification
+    const attachments = await this.prismaClient.notificationAttachment.findMany({
+      where: {
+        notificationId,
+      },
+    });
+
+    const attachment = attachments.find((att) => att.id === attachmentId);
+
+    if (!attachment) {
+      throw new Error(
+        `Attachment ${attachmentId} not found for notification ${notificationId}`,
+      );
+    }
+
     await this.prismaClient.notificationAttachment.delete({
       where: { id: attachmentId },
     });
@@ -1113,8 +1137,6 @@ export class PrismaNotificationBackend<
     if (!this.attachmentManager) {
       throw new Error('AttachmentManager is required but not provided');
     }
-
-    const { isAttachmentReference } = await import('vintasend/dist/types/attachment');
 
     // Process each attachment
     for (const att of attachments) {

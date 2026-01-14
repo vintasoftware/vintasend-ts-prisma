@@ -1319,6 +1319,56 @@ describe('PrismaNotificationBackend', () => {
       });
       expect(result).toEqual(['id5', 'id6']);
     });
+
+    it('should omit attachments in bulk notifications', async () => {
+      const notifications = [
+        {
+          userId: 'user1',
+          notificationType: NotificationTypeEnum.EMAIL,
+          bodyTemplate: 'Body 1',
+          contextName: 'testContext' as keyof TestContexts,
+          contextParameters: { param1: 'value1' },
+          title: 'Title 1',
+          subjectTemplate: 'Subject 1',
+          extraParams: null,
+          sendAfter: null,
+          // biome-ignore lint/suspicious/noExplicitAny: Testing attachments in bulk
+          attachments: [{ fileId: 'file-123', description: 'Test attachment' }] as any,
+        },
+        {
+          userId: 'user2',
+          notificationType: NotificationTypeEnum.EMAIL,
+          bodyTemplate: 'Body 2',
+          contextName: 'testContext' as keyof TestContexts,
+          contextParameters: { param1: 'value2' },
+          title: 'Title 2',
+          subjectTemplate: 'Subject 2',
+          extraParams: null,
+          sendAfter: null,
+        },
+      ];
+
+      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as jest.Mock;
+      createManyAndReturnMock.mockResolvedValue([{ id: 'id1' }, { id: 'id2' }]);
+
+      const result = await backend.bulkPersistNotifications(notifications);
+
+      // Ensure that attachments in bulk notifications are not persisted as part of the Prisma payload
+      const createManyAndReturnCalls = createManyAndReturnMock.mock.calls;
+
+      expect(createManyAndReturnCalls.length).toBe(1);
+      const bulkPayload = createManyAndReturnCalls[0][0];
+
+      // bulkPayload.data should be an array of notification payloads
+      expect(Array.isArray(bulkPayload.data)).toBe(true);
+
+      for (const notificationPayload of bulkPayload.data) {
+        // attachments should be omitted/ignored in the Prisma createManyAndReturn payload
+        expect(notificationPayload.attachments).toBeUndefined();
+      }
+
+      expect(result).toEqual(['id1', 'id2']);
+    });
   });
 
   describe('One-off notification methods', () => {

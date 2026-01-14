@@ -141,17 +141,65 @@ describe('PrismaNotificationBackend - Attachments', () => {
     });
   });
 
+  describe('findAttachmentFileByChecksum', () => {
+    it('should retrieve an attachment file by checksum', async () => {
+      (mockPrismaClient.attachmentFile.findUnique as jest.Mock).mockResolvedValue(
+        mockAttachmentFile,
+      );
+
+      const result = await backend.findAttachmentFileByChecksum('abc123');
+
+      expect(mockPrismaClient.attachmentFile.findUnique).toHaveBeenCalledWith({
+        where: { checksum: 'abc123' },
+      });
+      expect(result).toMatchObject({
+        id: 'file-123',
+        filename: 'test.pdf',
+        contentType: 'application/pdf',
+        size: 1024,
+        checksum: 'abc123',
+      });
+    });
+
+    it('should return null if file with checksum is not found', async () => {
+      (mockPrismaClient.attachmentFile.findUnique as jest.Mock).mockResolvedValue(null);
+
+      const result = await backend.findAttachmentFileByChecksum('missing-checksum');
+
+      expect(mockPrismaClient.attachmentFile.findUnique).toHaveBeenCalledWith({
+        where: { checksum: 'missing-checksum' },
+      });
+      expect(result).toBeNull();
+    });
+  });
+
   describe('deleteAttachmentFile', () => {
-    it('should delete an attachment file', async () => {
+    it('should delete an attachment file and its storage', async () => {
+      (mockPrismaClient.attachmentFile.findUnique as jest.Mock).mockResolvedValue(
+        mockAttachmentFile,
+      );
       (mockPrismaClient.attachmentFile.delete as jest.Mock).mockResolvedValue(
         mockAttachmentFile,
       );
 
       await backend.deleteAttachmentFile('file-123');
 
+      expect(mockPrismaClient.attachmentFile.findUnique).toHaveBeenCalledWith({
+        where: { id: 'file-123' },
+      });
+      expect(mockAttachmentManager.deleteFile).toHaveBeenCalledWith('file-123');
       expect(mockPrismaClient.attachmentFile.delete).toHaveBeenCalledWith({
         where: { id: 'file-123' },
       });
+    });
+
+    it('should return early if file not found', async () => {
+      (mockPrismaClient.attachmentFile.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await backend.deleteAttachmentFile('nonexistent');
+
+      expect(mockAttachmentManager.deleteFile).not.toHaveBeenCalled();
+      expect(mockPrismaClient.attachmentFile.delete).not.toHaveBeenCalled();
     });
   });
 
@@ -223,15 +271,33 @@ describe('PrismaNotificationBackend - Attachments', () => {
 
   describe('deleteNotificationAttachment', () => {
     it('should delete a notification attachment', async () => {
+      (mockPrismaClient.notificationAttachment.findMany as jest.Mock).mockResolvedValue([
+        mockNotificationAttachment,
+      ]);
       (mockPrismaClient.notificationAttachment.delete as jest.Mock).mockResolvedValue(
         mockNotificationAttachment,
       );
 
       await backend.deleteNotificationAttachment('1', 'att-1');
 
+      expect(mockPrismaClient.notificationAttachment.findMany).toHaveBeenCalledWith({
+        where: {
+          notificationId: '1',
+        },
+      });
       expect(mockPrismaClient.notificationAttachment.delete).toHaveBeenCalledWith({
         where: { id: 'att-1' },
       });
+    });
+
+    it('should throw error if attachment does not belong to notification', async () => {
+      (mockPrismaClient.notificationAttachment.findMany as jest.Mock).mockResolvedValue([]);
+
+      await expect(backend.deleteNotificationAttachment('1', 'att-999')).rejects.toThrow(
+        'Attachment att-999 not found for notification 1',
+      );
+
+      expect(mockPrismaClient.notificationAttachment.delete).not.toHaveBeenCalled();
     });
   });
 
@@ -379,6 +445,41 @@ describe('PrismaNotificationBackend - Attachments', () => {
       expect(mockPrismaClient.attachmentFile.create).not.toHaveBeenCalled();
       expect(mockPrismaClient.notificationAttachment.create).toHaveBeenCalled();
       expect(result.attachments).toBeDefined();
+    });
+
+    it('should fail when referenced attachment file is missing', async () => {
+      const attachmentInput: NotificationAttachment = {
+        fileId: 'missing-file',
+        description: 'Missing referenced file',
+      };
+
+      const input = {
+        userId: 'user1',
+        notificationType: NotificationTypeEnum.EMAIL,
+        bodyTemplate: 'Test Body',
+        contextName: 'testContext' as keyof TestContexts,
+        contextParameters: { param1: 'value1' },
+        title: 'Test Title',
+        subjectTemplate: 'Test Subject',
+        extraParams: null,
+        sendAfter: null,
+        attachments: [attachmentInput],
+      };
+
+      (mockPrismaClient.notification.create as jest.Mock).mockResolvedValue({
+        ...mockNotification,
+        attachments: [],
+      });
+      (mockPrismaClient.attachmentFile.findUnique as jest.Mock).mockResolvedValue(null);
+
+      await expect(backend.persistNotification(input)).rejects.toThrow(
+        'Referenced file missing-file not found',
+      );
+
+      expect(mockPrismaClient.attachmentFile.findUnique).toHaveBeenCalledWith({
+        where: { id: 'missing-file' },
+      });
+      expect(mockPrismaClient.notificationAttachment.create).not.toHaveBeenCalled();
     });
 
     it('should create notification without attachments', async () => {
