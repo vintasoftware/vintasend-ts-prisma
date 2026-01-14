@@ -25,7 +25,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
   >;
   let mockAttachmentManager: jest.Mocked<BaseAttachmentManager>;
   let backend: PrismaNotificationBackend<
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: any just for testing
     typeof mockPrismaClient,
     any
   >;
