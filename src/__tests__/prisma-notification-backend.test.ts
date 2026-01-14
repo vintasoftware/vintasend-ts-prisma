@@ -19,19 +19,34 @@ type TestContexts = {
 describe('PrismaNotificationBackend', () => {
   let mockPrismaClient: jest.Mocked<NotificationPrismaClientInterface<string, string>>;
   let backend: PrismaNotificationBackend<
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: any just for testing
     typeof mockPrismaClient,
     any
   >;
 
   beforeEach(() => {
     mockPrismaClient = {
+      $transaction: jest.fn(<R>(fn: (prisma: typeof mockPrismaClient) => Promise<R>) =>
+        fn(mockPrismaClient),
+      ) as any,
       notification: {
         findMany: jest.fn(),
         create: jest.fn(),
-        createMany: jest.fn(),
+        createManyAndReturn: jest.fn(),
         update: jest.fn(),
         findUnique: jest.fn(),
+      },
+      attachmentFile: {
+        create: jest.fn(),
+        findUnique: jest.fn(),
+        delete: jest.fn(),
+        findMany: jest.fn(),
+      },
+      notificationAttachment: {
+        create: jest.fn(),
+        findMany: jest.fn(),
+        delete: jest.fn(),
+        deleteMany: jest.fn(),
       },
     };
 
@@ -108,6 +123,13 @@ describe('PrismaNotificationBackend', () => {
           notificationType: NotificationTypeEnum.EMAIL,
           bodyTemplate: 'Test Body',
         }),
+        include: {
+          attachments: {
+            include: {
+              attachmentFile: true,
+            },
+          },
+        },
       });
       expect(result).toMatchObject({
         id: '1',
@@ -119,7 +141,7 @@ describe('PrismaNotificationBackend', () => {
 
   describe('markAsSent', () => {
     it('should mark a notification as sent', async () => {
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: any just for testing
       const sentNotification: DatabaseNotification<any> = {
         ...mockNotification,
         status: NotificationStatusEnum.SENT,
@@ -130,7 +152,7 @@ describe('PrismaNotificationBackend', () => {
 
       updateMock.mockResolvedValue(sentNotification);
 
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: any just for testing
       const result: AnyDatabaseNotification<any> = await backend.markAsSent('1');
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
@@ -148,7 +170,7 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should skip pending send status chack if checkIsPending is false', async () => {
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: any just for testing
       const sentNotification: DatabaseNotification<any> = {
         ...mockNotification,
         status: NotificationStatusEnum.SENT,
@@ -159,7 +181,7 @@ describe('PrismaNotificationBackend', () => {
 
       updateMock.mockResolvedValue(sentNotification);
 
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: any just for testing
       const result: AnyDatabaseNotification<any> = await backend.markAsSent('1', false);
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
@@ -555,6 +577,13 @@ describe('PrismaNotificationBackend', () => {
 
       expect(mockPrismaClient.notification.findUnique).toHaveBeenCalledWith({
         where: { id: '1' },
+        include: {
+          attachments: {
+            include: {
+              attachmentFile: true,
+            },
+          },
+        },
       });
       expect(result).toMatchObject({
         id: '1',
@@ -911,7 +940,7 @@ describe('PrismaNotificationBackend', () => {
       });
       // Verify the type casting worked by checking if it matches TestContexts type
       expect(result.contextName).toBe('testContext');
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: any just for testing
       expect(typeof (result.contextParameters as any).param1).toBe('string');
     });
   });
@@ -1127,12 +1156,12 @@ describe('PrismaNotificationBackend', () => {
         },
       ];
 
-      const createManyMock = mockPrismaClient.notification.createMany as jest.Mock;
-      createManyMock.mockResolvedValue(['id1', 'id2']);
+      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as jest.Mock;
+      createManyAndReturnMock.mockResolvedValue([{ id: 'id1' }, { id: 'id2' }]);
 
       const result = await backend.bulkPersistNotifications(notifications);
 
-      expect(mockPrismaClient.notification.createMany).toHaveBeenCalledWith({
+      expect(mockPrismaClient.notification.createManyAndReturn).toHaveBeenCalledWith({
         data: expect.arrayContaining([
           expect.objectContaining({
             user: { connect: { id: 'user1' } },
@@ -1177,12 +1206,12 @@ describe('PrismaNotificationBackend', () => {
         },
       ];
 
-      const createManyMock = mockPrismaClient.notification.createMany as jest.Mock;
-      createManyMock.mockResolvedValue(['id3', 'id4']);
+      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as jest.Mock;
+      createManyAndReturnMock.mockResolvedValue([{ id: 'id3' }, { id: 'id4' }]);
 
       const result = await backend.bulkPersistNotifications(notifications);
 
-      expect(mockPrismaClient.notification.createMany).toHaveBeenCalledWith({
+      expect(mockPrismaClient.notification.createManyAndReturn).toHaveBeenCalledWith({
         data: expect.arrayContaining([
           expect.objectContaining({
             emailOrPhone: 'oneoff1@example.com',
@@ -1219,13 +1248,13 @@ describe('PrismaNotificationBackend', () => {
         },
       ];
 
-      const createManyMock = mockPrismaClient.notification.createMany as jest.Mock;
-      createManyMock.mockResolvedValue(['id-both']);
+      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as jest.Mock;
+      createManyAndReturnMock.mockResolvedValue([{ id: 'id-both' }]);
 
       const result = await backend.bulkPersistNotifications(notifications);
 
       // userId should take precedence, creating a regular notification
-      expect(mockPrismaClient.notification.createMany).toHaveBeenCalledWith({
+      expect(mockPrismaClient.notification.createManyAndReturn).toHaveBeenCalledWith({
         data: expect.arrayContaining([
           expect.objectContaining({
             user: { connect: { id: 'user-with-both' } },
@@ -1235,7 +1264,7 @@ describe('PrismaNotificationBackend', () => {
       });
 
       // Should not include one-off fields when userId is present
-      const callData = (mockPrismaClient.notification.createMany as jest.Mock).mock.calls[0][0]
+      const callData = (mockPrismaClient.notification.createManyAndReturn as jest.Mock).mock.calls[0][0]
         .data[0];
       expect(callData).not.toHaveProperty('emailOrPhone');
       expect(callData).not.toHaveProperty('firstName');
@@ -1273,12 +1302,12 @@ describe('PrismaNotificationBackend', () => {
         },
       ];
 
-      const createManyMock = mockPrismaClient.notification.createMany as jest.Mock;
-      createManyMock.mockResolvedValue(['id5', 'id6']);
+      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as jest.Mock;
+      createManyAndReturnMock.mockResolvedValue([{ id: 'id5' }, { id: 'id6' }]);
 
       const result = await backend.bulkPersistNotifications(notifications);
 
-      expect(mockPrismaClient.notification.createMany).toHaveBeenCalledWith({
+      expect(mockPrismaClient.notification.createManyAndReturn).toHaveBeenCalledWith({
         data: expect.arrayContaining([
           expect.objectContaining({
             user: { connect: { id: 'user1' } },
@@ -1293,6 +1322,56 @@ describe('PrismaNotificationBackend', () => {
         ]),
       });
       expect(result).toEqual(['id5', 'id6']);
+    });
+
+    it('should omit attachments in bulk notifications', async () => {
+      const notifications = [
+        {
+          userId: 'user1',
+          notificationType: NotificationTypeEnum.EMAIL,
+          bodyTemplate: 'Body 1',
+          contextName: 'testContext' as keyof TestContexts,
+          contextParameters: { param1: 'value1' },
+          title: 'Title 1',
+          subjectTemplate: 'Subject 1',
+          extraParams: null,
+          sendAfter: null,
+          // biome-ignore lint/suspicious/noExplicitAny: Testing attachments in bulk
+          attachments: [{ fileId: 'file-123', description: 'Test attachment' }] as any,
+        },
+        {
+          userId: 'user2',
+          notificationType: NotificationTypeEnum.EMAIL,
+          bodyTemplate: 'Body 2',
+          contextName: 'testContext' as keyof TestContexts,
+          contextParameters: { param1: 'value2' },
+          title: 'Title 2',
+          subjectTemplate: 'Subject 2',
+          extraParams: null,
+          sendAfter: null,
+        },
+      ];
+
+      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as jest.Mock;
+      createManyAndReturnMock.mockResolvedValue([{ id: 'id1' }, { id: 'id2' }]);
+
+      const result = await backend.bulkPersistNotifications(notifications);
+
+      // Ensure that attachments in bulk notifications are not persisted as part of the Prisma payload
+      const createManyAndReturnCalls = createManyAndReturnMock.mock.calls;
+
+      expect(createManyAndReturnCalls.length).toBe(1);
+      const bulkPayload = createManyAndReturnCalls[0][0];
+
+      // bulkPayload.data should be an array of notification payloads
+      expect(Array.isArray(bulkPayload.data)).toBe(true);
+
+      for (const notificationPayload of bulkPayload.data) {
+        // attachments should be omitted/ignored in the Prisma createManyAndReturn payload
+        expect(notificationPayload.attachments).toBeUndefined();
+      }
+
+      expect(result).toEqual(['id1', 'id2']);
     });
   });
 
@@ -1351,6 +1430,13 @@ describe('PrismaNotificationBackend', () => {
             bodyTemplate: 'Test Body',
             status: NotificationStatusEnum.PENDING_SEND,
           }),
+          include: {
+            attachments: {
+              include: {
+                attachmentFile: true,
+              },
+            },
+          },
         });
         expect(result).toMatchObject({
           emailOrPhone: 'oneoff@example.com',

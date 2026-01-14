@@ -15,6 +15,13 @@ import type {
 import type { NotificationStatus } from 'vintasend/dist/types/notification-status';
 import type { NotificationType } from 'vintasend/dist/types/notification-type';
 import type { BaseNotificationTypeConfig } from 'vintasend/dist/types/notification-type-config';
+import type {
+  AttachmentFileRecord,
+  StoredAttachment,
+  NotificationAttachment,
+} from 'vintasend/dist/types/attachment';
+import { isAttachmentReference } from 'vintasend/dist/types/attachment';
+import type { BaseAttachmentManager } from 'vintasend/dist/services/attachment-manager/base-attachment-manager';
 
 export const NotificationStatusEnum = {
   PENDING_SEND: 'PENDING_SEND',
@@ -57,11 +64,36 @@ export interface PrismaNotificationModel<IdType, UserId> {
   user?: {
     email: string;
   };
+  attachments?: PrismaNotificationAttachmentModel[];
+}
+
+export interface PrismaAttachmentFileModel {
+  id: string;
+  filename: string;
+  contentType: string;
+  size: number;
+  checksum: string;
+  storageMetadata: JsonValue;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface PrismaNotificationAttachmentModel {
+  id: string;
+  notificationId: number;
+  fileId: string;
+  description: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  attachmentFile?: PrismaAttachmentFileModel;
 }
 
 export interface NotificationPrismaClientInterface<NotificationIdType, UserIdType> {
+  $transaction<R>(
+    fn: (prisma: NotificationPrismaClientInterface<NotificationIdType, UserIdType>) => Promise<R>,
+  ): Promise<R>;
   notification: {
-    findMany(args: {
+    findMany(args?: {
       where?: {
         status?: NotificationStatus | { not: NotificationStatus };
         sendAfter?: { lte: Date } | null;
@@ -71,29 +103,99 @@ export interface NotificationPrismaClientInterface<NotificationIdType, UserIdTyp
       };
       skip?: number;
       take?: number;
-      include?: { user?: boolean };
+      include?: {
+        user?: boolean;
+        attachments?: boolean | { include: { attachmentFile: boolean } };
+      };
     }): Promise<PrismaNotificationModel<NotificationIdType, UserIdType>[]>;
     create(args: {
-      data: BaseNotificationCreateInput<UserIdType>;
-      include?: { user?: boolean };
+      data: PrismaNotificationCreateData<UserIdType>;
+      include?: {
+        user?: boolean;
+        attachments?: boolean | { include: { attachmentFile: boolean } };
+      };
     }): Promise<PrismaNotificationModel<NotificationIdType, UserIdType>>;
-    createMany(args: {
-      data: BaseNotificationCreateInput<UserIdType>[];
-    }): Promise<NotificationIdType[]>;
+    createManyAndReturn(args: {
+      data: PrismaNotificationCreateData<UserIdType>[];
+    }): Promise<PrismaNotificationModel<NotificationIdType, UserIdType>[]>;
     update(args: {
       where: { id: NotificationIdType };
-      data: Partial<BaseNotificationUpdateInput<UserIdType>>;
-      include?: { user?: boolean };
+      data: BaseNotificationUpdateInput<UserIdType>;
+      include?: {
+        user?: boolean;
+        attachments?: boolean | { include: { attachmentFile: boolean } };
+      };
     }): Promise<PrismaNotificationModel<NotificationIdType, UserIdType>>;
     findUnique(args: {
       where: { id: NotificationIdType };
-      include?: { user?: boolean };
+      include?: {
+        user?: boolean;
+        attachments?: boolean | { include: { attachmentFile: boolean } };
+      };
     }): Promise<PrismaNotificationModel<NotificationIdType, UserIdType> | null>;
+  };
+  attachmentFile: {
+    findUnique(args: {
+      where: { id: string } | { checksum: string };
+    }): Promise<PrismaAttachmentFileModel | null>;
+    create(args: {
+      data: {
+        id?: string;
+        filename: string;
+        contentType: string;
+        size: number;
+        checksum: string;
+        storageMetadata: InputJsonValue;
+      };
+    }): Promise<PrismaAttachmentFileModel>;
+    delete(args: {
+      where: { id: string };
+    }): Promise<PrismaAttachmentFileModel>;
+    findMany(args?: {
+      where?: {
+        notificationAttachments?: { none: object };
+        createdAt?: { lt: Date };
+      };
+    }): Promise<PrismaAttachmentFileModel[]>;
+  };
+  notificationAttachment: {
+    findMany(args: {
+      where: {
+        notificationId: NotificationIdType;
+      };
+      include?: { attachmentFile: boolean };
+    }): Promise<PrismaNotificationAttachmentModel[]>;
+    delete(args: {
+      where: { id: string };
+    }): Promise<PrismaNotificationAttachmentModel>;
+    deleteMany(args: {
+      where: {
+        id: string;
+        notificationId: NotificationIdType;
+      };
+    }): Promise<{ count: number }>;
+    create(args: {
+      data: {
+        id?: string;
+        notificationId: NotificationIdType;
+        fileId: string;
+        description?: string | null;
+      };
+    }): Promise<PrismaNotificationAttachmentModel>;
   };
 }
 
 // cause typescript not to expand types and preserve names
 type NoExpand<T> = T extends unknown ? T : never;
+
+// Centralized attachment include shape for DRY
+const notificationWithAttachmentsInclude = {
+  attachments: {
+    include: {
+      attachmentFile: true as const,
+    },
+  },
+} as const;
 
 // this type assumes the passed object is entirely optional
 type AtLeast<O extends object, K extends string> = NoExpand<
@@ -105,21 +207,6 @@ type AtLeast<O extends object, K extends string> = NoExpand<
 >;
 
 export interface BaseNotificationCreateInput<UserIdType> {
-  // Regular notification (with user) - make user optional for one-off notifications
-  user?: {
-    connect?: AtLeast<
-      {
-        id?: UserIdType;
-        email?: string;
-      },
-      'id' | 'email'
-    >;
-  };
-  userId?: UserIdType | null; // Allow explicitly setting userId to null for one-off notifications
-  // One-off notification fields (when user is not provided)
-  emailOrPhone?: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
   // Common fields
   notificationType: NotificationType;
   title?: string | null;
@@ -134,7 +221,17 @@ export interface BaseNotificationCreateInput<UserIdType> {
   adapterUsed?: string | null;
   sentAt?: Date | null;
   readAt?: Date | null;
+  emailOrPhone?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
 }
+
+// Prisma-compatible type for creating notifications
+export type PrismaNotificationCreateData<UserIdType> =
+  BaseNotificationCreateInput<UserIdType> & {
+    userId?: UserIdType | null;
+    user?: { connect: { id: UserIdType } };
+  };
 
 export interface BaseNotificationUpdateInput<UserIdType> {
   user?: {
@@ -180,7 +277,17 @@ export class PrismaNotificationBackend<
   Config extends BaseNotificationTypeConfig,
 > implements BaseNotificationBackend<Config>
 {
-  constructor(private prismaClient: Client) {}
+  constructor(
+    private prismaClient: Client,
+    private attachmentManager?: BaseAttachmentManager,
+  ) {}
+
+  /**
+   * Inject attachment manager (called by VintaSend when both service and backend exist)
+   */
+  injectAttachmentManager(manager: BaseAttachmentManager): void {
+    this.attachmentManager = manager;
+  }
 
   /**
    * Build a where clause for status-based updates
@@ -239,6 +346,11 @@ export class PrismaNotificationBackend<
       readAt: notification.readAt,
       createdAt: notification.createdAt,
       updatedAt: notification.updatedAt,
+      // Serialize attachments if present and attachmentManager is available
+      attachments:
+        notification.attachments && this.attachmentManager
+          ? notification.attachments.map((att) => this.serializeStoredAttachment(att))
+          : undefined,
     };
 
     // Check if this is a one-off notification (has emailOrPhone but no userId)
@@ -302,7 +414,7 @@ export class PrismaNotificationBackend<
    */
   private buildCreateData(
     notification: AnyNotificationInput<Config> | Omit<AnyNotificationInput<Config>, 'id'>,
-  ): BaseNotificationCreateInput<Config['UserIdType']> {
+  ): PrismaNotificationCreateData<Config['UserIdType']> {
     const hasUserId = 'userId' in notification && notification.userId != null;
     const hasEmailOrPhone = 'emailOrPhone' in notification && notification.emailOrPhone != null;
 
@@ -324,16 +436,20 @@ export class PrismaNotificationBackend<
       sendAfter: notification.sendAfter,
       subjectTemplate: notification.subjectTemplate,
       extraParams: notification.extraParams as InputJsonValue,
+      // Only include one-off fields if this is actually a one-off notification
+      ...(isOneOff && {
+        emailOrPhone: 'emailOrPhone' in notification ? notification.emailOrPhone : null,
+        firstName: 'firstName' in notification ? notification.firstName ?? null : null,
+        lastName: 'lastName' in notification ? notification.lastName ?? null : null,
+      }),
     };
 
     if (isOneOff) {
       return {
         ...base,
         userId: null,
-        emailOrPhone: 'emailOrPhone' in notification ? notification.emailOrPhone : '',
-        firstName: ('firstName' in notification ? notification.firstName : null) ?? null,
-        lastName: ('lastName' in notification ? notification.lastName : null) ?? null,
         status: NotificationStatusEnum.PENDING_SEND,
+        user: undefined,
       };
     }
 
@@ -341,6 +457,7 @@ export class PrismaNotificationBackend<
     const userId = ('userId' in notification ? notification.userId : null) as Config['UserIdType'];
     return {
       ...base,
+      userId,
       user: {
         connect: { id: userId },
       },
@@ -352,7 +469,7 @@ export class PrismaNotificationBackend<
    */
   private deserializeRegularNotification(
     notification: NotificationInput<Config>,
-  ): BaseNotificationCreateInput<Config['UserIdType']> {
+  ): PrismaNotificationCreateData<Config['UserIdType']> {
     return this.buildCreateData(notification);
   }
 
@@ -361,7 +478,7 @@ export class PrismaNotificationBackend<
    */
   private buildOneOffNotificationData(
     notification: OneOffNotificationInput<Config>,
-  ): BaseNotificationCreateInput<Config['UserIdType']> {
+  ): PrismaNotificationCreateData<Config['UserIdType']> {
     return this.buildCreateData(notification);
   }
 
@@ -456,9 +573,178 @@ export class PrismaNotificationBackend<
     return data;
   }
 
+  /**
+   * Get or create file record for attachment upload with deduplication (transaction-aware)
+   * @private
+   */
+  private async getOrCreateFileRecordForUploadInTransaction(
+    tx: NotificationPrismaClientInterface<Config['NotificationIdType'], Config['UserIdType']>,
+    att: Extract<NotificationAttachment, { file: unknown }>,
+  ): Promise<AttachmentFileRecord> {
+    const manager = this.getAttachmentManager();
+
+    const buffer = await manager.fileToBuffer(att.file);
+    const checksum = manager.calculateChecksum(buffer);
+
+    let fileRecord = await this.findAttachmentFileByChecksumInTransaction(tx, checksum);
+    if (!fileRecord) {
+      fileRecord = await manager.uploadFile(att.file, att.filename, att.contentType);
+      await tx.attachmentFile.create({
+        data: {
+          id: fileRecord.id,
+          filename: fileRecord.filename,
+          contentType: fileRecord.contentType,
+          size: fileRecord.size,
+          checksum: fileRecord.checksum,
+          storageMetadata: fileRecord.storageMetadata as InputJsonValue,
+        },
+      });
+    }
+
+    return fileRecord;
+  }
+
+  /**
+   * Get or create file record for attachment upload with deduplication (non-transactional)
+   * @private
+   */
+  private async getOrCreateFileRecordForUpload(
+    att: Extract<NotificationAttachment, { file: unknown }>,
+  ): Promise<AttachmentFileRecord> {
+    return this.getOrCreateFileRecordForUploadInTransaction(this.prismaClient, att);
+  }
+
+  /**
+   * Create notification attachment link (transaction-aware)
+   * @private
+   */
+  private async createNotificationAttachmentLinkInTransaction(
+    tx: NotificationPrismaClientInterface<Config['NotificationIdType'], Config['UserIdType']>,
+    notificationId: Config['NotificationIdType'],
+    fileId: string,
+    description?: string | null,
+  ): Promise<void> {
+    await tx.notificationAttachment.create({
+      data: {
+        notificationId,
+        fileId,
+        description: description ?? null,
+      },
+    });
+  }
+
+  /**
+   * Create notification attachment link (non-transactional)
+   * @private
+   */
+  private async createNotificationAttachmentLink(
+    notificationId: Config['NotificationIdType'],
+    fileId: string,
+    description?: string | null,
+  ): Promise<void> {
+    return this.createNotificationAttachmentLinkInTransaction(
+      this.prismaClient,
+      notificationId,
+      fileId,
+      description,
+    );
+  }
+
+  /**
+   * Get attachment file by ID (transaction-aware)
+   * @private
+   */
+  private async getAttachmentFileInTransaction(
+    tx: NotificationPrismaClientInterface<Config['NotificationIdType'], Config['UserIdType']>,
+    fileId: string,
+  ): Promise<AttachmentFileRecord | null> {
+    const file = await tx.attachmentFile.findUnique({
+      where: { id: fileId },
+    });
+
+    if (!file) return null;
+
+    return this.serializeAttachmentFileRecord(file);
+  }
+
+  /**
+   * Find attachment file by checksum (transaction-aware)
+   * @private
+   */
+  private async findAttachmentFileByChecksumInTransaction(
+    tx: NotificationPrismaClientInterface<Config['NotificationIdType'], Config['UserIdType']>,
+    checksum: string,
+  ): Promise<AttachmentFileRecord | null> {
+    const file = await tx.attachmentFile.findUnique({
+      where: { checksum },
+    });
+
+    if (!file) return null;
+
+    return this.serializeAttachmentFileRecord(file);
+  }
+
+  /**
+   * Core helper for creating notifications with attachments (both regular and one-off)
+   * Uses transactions to ensure atomicity - if attachment processing fails, the notification won't be created
+   * @private
+   */
+  private async createNotificationWithAttachments<TInput, TSerialized>(
+    input: TInput & { attachments?: NotificationAttachment[] },
+    buildData: (notification: Omit<TInput, 'attachments'>) => PrismaNotificationCreateData<
+      Config['UserIdType']
+    >,
+    serialize: (
+      db: PrismaNotificationModel<Config['NotificationIdType'], Config['UserIdType']>,
+    ) => TSerialized,
+  ): Promise<TSerialized> {
+    const { attachments, ...notificationData } = input;
+
+    // If no attachments, skip transaction overhead
+    if (!attachments || attachments.length === 0) {
+      const created = await this.prismaClient.notification.create({
+        data: buildData(notificationData as TInput),
+        include: notificationWithAttachmentsInclude,
+      });
+      return serialize(created);
+    }
+
+    // Use transaction to ensure atomicity of notification + attachments
+    return await this.prismaClient.$transaction(async (tx) => {
+      const created = await tx.notification.create({
+        data: buildData(notificationData as TInput),
+        include: notificationWithAttachmentsInclude,
+      });
+
+      await this.processAndStoreAttachmentsInTransaction(tx, created.id, attachments);
+
+      const withAttachments = await tx.notification.findUnique({
+        where: { id: created.id },
+        include: notificationWithAttachmentsInclude,
+      });
+
+      if (!withAttachments) {
+        throw new Error('Failed to retrieve notification after creating attachments');
+      }
+
+      return serialize(withAttachments);
+    });
+  }
+
+  /**
+   * Get attachment manager with null check
+   * @private
+   */
+  private getAttachmentManager(): BaseAttachmentManager {
+    if (!this.attachmentManager) {
+      throw new Error('AttachmentManager is required but not provided');
+    }
+    return this.attachmentManager;
+  }
+
   deserializeNotification(
     notification: AnyNotificationInput<Config> | Omit<AnyNotificationInput<Config>, 'id'>,
-  ): BaseNotificationCreateInput<Config['UserIdType']> {
+  ): PrismaNotificationCreateData<Config['UserIdType']> {
     return this.buildCreateData(notification);
   }
 
@@ -603,11 +889,11 @@ export class PrismaNotificationBackend<
   async persistNotification(
     notification: NotificationInput<Config>,
   ): Promise<DatabaseNotification<Config>> {
-    const created = await this.prismaClient.notification.create({
-      data: this.deserializeRegularNotification(notification),
-    });
-
-    return this.serializeRegularNotification(created);
+    return this.createNotificationWithAttachments(
+      notification,
+      (n) => this.deserializeRegularNotification(n as NotificationInput<Config>),
+      (db) => this.serializeRegularNotification(db),
+    );
   }
 
   async persistNotificationUpdate(
@@ -630,11 +916,11 @@ export class PrismaNotificationBackend<
   async persistOneOffNotification(
     notification: OneOffNotificationInput<Config>,
   ): Promise<DatabaseOneOffNotification<Config>> {
-    const created = await this.prismaClient.notification.create({
-      data: this.buildOneOffNotificationData(notification),
-    });
-
-    return this.serializeOneOffNotification(created);
+    return this.createNotificationWithAttachments(
+      notification,
+      (n) => this.buildOneOffNotificationData(n as OneOffNotificationInput<Config>),
+      (db) => this.serializeOneOffNotification(db),
+    );
   }
 
   async persistOneOffNotificationUpdate(
@@ -790,6 +1076,7 @@ export class PrismaNotificationBackend<
   ): Promise<AnyDatabaseNotification<Config> | null> {
     const notification = await this.prismaClient.notification.findUnique({
       where: { id: notificationId as Config['NotificationIdType'] },
+      include: notificationWithAttachmentsInclude,
     });
 
     if (!notification) return null;
@@ -865,9 +1152,199 @@ export class PrismaNotificationBackend<
   async bulkPersistNotifications(
     notifications: Omit<AnyNotification<Config>, 'id'>[],
   ): Promise<Config['NotificationIdType'][]> {
-    return this.prismaClient.notification.createMany({
+    const created = await this.prismaClient.notification.createManyAndReturn({
       data: notifications.map((notification) => this.deserializeNotification(notification)),
     });
+    return created.map((n) => n.id);
+  }
+
+  /* Attachment management methods */
+
+  async getAttachmentFile(fileId: string): Promise<AttachmentFileRecord | null> {
+    const file = await this.prismaClient.attachmentFile.findUnique({
+      where: { id: fileId },
+    });
+
+    if (!file) return null;
+
+    return this.serializeAttachmentFileRecord(file);
+  }
+
+  /**
+   * Find an attachment file by checksum for deduplication.
+   * This allows the backend to check if a file already exists before uploading.
+   */
+  async findAttachmentFileByChecksum(checksum: string): Promise<AttachmentFileRecord | null> {
+    const file = await this.prismaClient.attachmentFile.findUnique({
+      where: { checksum },
+    });
+
+    if (!file) return null;
+
+    return this.serializeAttachmentFileRecord(file);
+  }
+
+  async deleteAttachmentFile(fileId: string): Promise<void> {
+    const file = await this.prismaClient.attachmentFile.findUnique({
+      where: { id: fileId },
+    });
+
+    // If there's no DB record, there's nothing to delete
+    if (!file) return;
+
+    // First delete the underlying stored file so DB and storage stay in sync
+    const manager = this.getAttachmentManager();
+    await manager.deleteFile(fileId);
+
+    // Only after successful storage deletion, remove the DB record
+    await this.prismaClient.attachmentFile.delete({
+      where: { id: fileId },
+    });
+  }
+
+  async getOrphanedAttachmentFiles(): Promise<AttachmentFileRecord[]> {
+    const orphanedFiles = await this.prismaClient.attachmentFile.findMany({
+      where: {
+        notificationAttachments: { none: {} },
+      },
+    });
+
+    return orphanedFiles.map((file) => this.serializeAttachmentFileRecord(file));
+  }
+
+  async getAttachments(
+    notificationId: Config['NotificationIdType'],
+  ): Promise<StoredAttachment[]> {
+    const attachments = await this.prismaClient.notificationAttachment.findMany({
+      where: { notificationId },
+      include: { attachmentFile: true },
+    });
+
+    this.getAttachmentManager(); // Validate attachment manager exists
+
+    return attachments.map((att) => this.serializeStoredAttachment(att));
+  }
+
+  async deleteNotificationAttachment(
+    notificationId: Config['NotificationIdType'],
+    attachmentId: string,
+  ): Promise<void> {
+    const result = await this.prismaClient.notificationAttachment.deleteMany({
+      where: {
+        id: attachmentId,
+        notificationId,
+      },
+    });
+
+    if (result.count === 0) {
+      throw new Error(
+        `Attachment ${attachmentId} not found for notification ${notificationId}`,
+      );
+    }
+  }
+
+  /**
+   * Process and store attachments for a notification within a transaction.
+   * Handles both new file uploads and references to existing files.
+   * Uses attachmentManager for checksum calculation and storage operations.
+   * @private
+   */
+  private async processAndStoreAttachmentsInTransaction(
+    tx: NotificationPrismaClientInterface<Config['NotificationIdType'], Config['UserIdType']>,
+    notificationId: Config['NotificationIdType'],
+    attachments: NotificationAttachment[],
+  ): Promise<void> {
+    this.getAttachmentManager(); // Validate attachment manager exists
+
+    // Process each attachment
+    for (const att of attachments) {
+      if (isAttachmentReference(att)) {
+        // Reference existing file - just create the notification link
+        const fileRecord = await this.getAttachmentFileInTransaction(tx, att.fileId);
+        if (!fileRecord) {
+          throw new Error(`Referenced file ${att.fileId} not found`);
+        }
+        await this.createNotificationAttachmentLinkInTransaction(
+          tx,
+          notificationId,
+          att.fileId,
+          att.description,
+        );
+      } else {
+        // Upload new file with deduplication
+        const fileRecord = await this.getOrCreateFileRecordForUploadInTransaction(tx, att);
+        await this.createNotificationAttachmentLinkInTransaction(
+          tx,
+          notificationId,
+          fileRecord.id,
+          att.description,
+        );
+      }
+    }
+  }
+
+  /**
+   * Process and store attachments for a notification (non-transactional version).
+   * Handles both new file uploads and references to existing files.
+   * Uses attachmentManager for checksum calculation and storage operations.
+   * @private
+   */
+  private async processAndStoreAttachments(
+    notificationId: Config['NotificationIdType'],
+    attachments: NotificationAttachment[],
+  ): Promise<void> {
+    return this.processAndStoreAttachmentsInTransaction(
+      this.prismaClient,
+      notificationId,
+      attachments,
+    );
+  }
+
+  /**
+   * Serialize a Prisma attachment file model to AttachmentFileRecord
+   * @private
+   */
+  private serializeAttachmentFileRecord(file: PrismaAttachmentFileModel): AttachmentFileRecord {
+    return {
+      id: file.id,
+      filename: file.filename,
+      contentType: file.contentType,
+      size: file.size,
+      checksum: file.checksum,
+      storageMetadata: file.storageMetadata as Record<string, unknown>,
+      createdAt: file.createdAt,
+      updatedAt: file.updatedAt,
+    };
+  }
+
+  /**
+   * Serialize a Prisma notification attachment model to StoredAttachment
+   * @private
+   */
+  private serializeStoredAttachment(
+    attachment: PrismaNotificationAttachmentModel,
+  ): StoredAttachment {
+    const manager = this.getAttachmentManager();
+
+    if (!attachment.attachmentFile) {
+      throw new Error('AttachmentFile is required to reconstruct stored attachment');
+    }
+
+    const fileRecord = this.serializeAttachmentFileRecord(attachment.attachmentFile);
+    const attachmentFile = manager.reconstructAttachmentFile(fileRecord.storageMetadata);
+
+    return {
+      id: attachment.id,
+      fileId: attachment.fileId,
+      filename: fileRecord.filename,
+      contentType: fileRecord.contentType,
+      size: fileRecord.size,
+      checksum: fileRecord.checksum,
+      createdAt: attachment.createdAt,
+      file: attachmentFile,
+      description: attachment.description ?? undefined,
+      storageMetadata: fileRecord.storageMetadata,
+    };
   }
 }
 
@@ -877,7 +1354,7 @@ export class PrismaNotificationBackendFactory<Config extends BaseNotificationTyp
       Config['NotificationIdType'],
       Config['UserIdType']
     >,
-  >(prismaClient: Client) {
-    return new PrismaNotificationBackend<Client, Config>(prismaClient);
+  >(prismaClient: Client, attachmentManager?: BaseAttachmentManager) {
+    return new PrismaNotificationBackend<Client, Config>(prismaClient, attachmentManager);
   }
 }
