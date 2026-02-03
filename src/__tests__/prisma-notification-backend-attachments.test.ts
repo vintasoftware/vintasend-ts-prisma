@@ -1,6 +1,5 @@
 import type {
   AttachmentFileRecord,
-  StoredAttachment,
   NotificationAttachment,
 } from 'vintasend/dist/types/attachment';
 import type { BaseAttachmentManager } from 'vintasend/dist/services/attachment-manager/base-attachment-manager';
@@ -545,17 +544,6 @@ describe('PrismaNotificationBackend - Attachments', () => {
         extraParams: null,
         sendAfter: null,
         attachments: [attachmentInput],
-      };
-
-      const fileRecord: AttachmentFileRecord = {
-        id: 'file-123',
-        filename: 'test.pdf',
-        contentType: 'application/pdf',
-        size: 1024,
-        checksum: 'abc123',
-        storageMetadata: { key: 's3://bucket/test.pdf' },
-        createdAt: new Date(),
-        updatedAt: new Date(),
       };
 
       // For file reference, no upload is needed

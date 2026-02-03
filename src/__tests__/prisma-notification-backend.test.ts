@@ -1,7 +1,6 @@
 import type {
   AnyDatabaseNotification,
   DatabaseNotification,
-  DatabaseOneOffNotification,
 } from 'vintasend/dist/types/notification';
 import { PrismaNotificationBackendFactory } from '../index';
 import { NotificationStatusEnum, NotificationTypeEnum } from '../prisma-notification-backend';
