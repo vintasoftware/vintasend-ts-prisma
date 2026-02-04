@@ -35,7 +35,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
     contentType: 'application/pdf',
     size: 1024,
     checksum: 'abc123',
-    storageMetadata: { key: 's3://bucket/test.pdf' },
+    storageMetadata: { id: 'file-123', key: 's3://bucket/test.pdf' },
     createdAt: new Date(),
     updatedAt: new Date(),
   };
@@ -349,7 +349,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
         contentType: 'application/pdf',
         size: 1024,
         checksum: fixedChecksum,
-        storageMetadata: { key: 's3://bucket/original.pdf' },
+        storageMetadata: { id: 'file-existing-1', key: 's3://bucket/original.pdf' },
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -475,7 +475,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
         contentType: 'application/pdf',
         size: 1024,
         checksum: 'abc123',
-        storageMetadata: { key: 's3://bucket/test.pdf' },
+        storageMetadata: { id: 'file-123', key: 's3://bucket/test.pdf' },
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -707,7 +707,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
         contentType: 'application/pdf',
         size: 5000,
         checksum: 'def456',
-        storageMetadata: { key: 's3://bucket/brochure.pdf' },
+        storageMetadata: { id: 'file-123', key: 's3://bucket/brochure.pdf' },
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -793,7 +793,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
         contentType: 'application/pdf',
         size: 2048,
         checksum: 'xyz789',
-        storageMetadata: { key: 's3://bucket/existing.pdf' },
+        storageMetadata: { id: 'file-123', key: 's3://bucket/existing.pdf' },
         createdAt: new Date(),
         updatedAt: new Date(),
       };
