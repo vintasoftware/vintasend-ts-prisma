@@ -19,6 +19,7 @@ import type {
   AttachmentFileRecord,
   StoredAttachment,
   NotificationAttachment,
+  StorageIdentifiers,
 } from 'vintasend/dist/types/attachment';
 import { isAttachmentReference } from 'vintasend/dist/types/attachment';
 import type { BaseAttachmentManager } from 'vintasend/dist/services/attachment-manager/base-attachment-manager';
@@ -74,7 +75,7 @@ export interface PrismaAttachmentFileModel {
   contentType: string;
   size: number;
   checksum: string;
-  storageMetadata: JsonValue;
+  storageIdentifiers: JsonValue;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -146,7 +147,7 @@ export interface NotificationPrismaClientInterface<NotificationIdType, UserIdTyp
         contentType: string;
         size: number;
         checksum: string;
-        storageMetadata: InputJsonValue;
+        storageIdentifiers: InputJsonValue;
       };
     }): Promise<PrismaAttachmentFileModel>;
     delete(args: {
@@ -606,7 +607,7 @@ export class PrismaNotificationBackend<
           contentType: fileRecord.contentType,
           size: fileRecord.size,
           checksum: fileRecord.checksum,
-          storageMetadata: fileRecord.storageMetadata as InputJsonValue,
+          storageIdentifiers: fileRecord.storageIdentifiers as InputJsonValue,
         },
       });
     }
@@ -693,6 +694,9 @@ export class PrismaNotificationBackend<
       this.logger?.info(`Notification created successfully with ID: ${created.id}`);
       return serialize(created);
     }
+
+    // Validate attachment manager exists
+    this.getAttachmentManager();
 
     // Use transaction to ensure atomicity of notification + attachments
     this.logger?.info(`Creating notification with ${attachments.length} attachment(s)`);
@@ -1194,7 +1198,8 @@ export class PrismaNotificationBackend<
 
     // First delete the underlying stored file so DB and storage stay in sync
     const manager = this.getAttachmentManager();
-    await manager.deleteFile(fileId);
+    const storageIdentifiers = file.storageIdentifiers as StorageIdentifiers;
+    await manager.deleteFileByIdentifiers(storageIdentifiers);
 
     // Only after successful storage deletion, remove the DB record
     await this.prismaClient.attachmentFile.delete({
@@ -1297,7 +1302,7 @@ export class PrismaNotificationBackend<
       contentType: file.contentType,
       size: file.size,
       checksum: file.checksum,
-      storageMetadata: file.storageMetadata as Record<string, unknown>,
+      storageIdentifiers: file.storageIdentifiers as StorageIdentifiers,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
     };
@@ -1317,7 +1322,7 @@ export class PrismaNotificationBackend<
     }
 
     const fileRecord = this.serializeAttachmentFileRecord(attachment.attachmentFile);
-    const attachmentFile = manager.reconstructAttachmentFile(fileRecord.storageMetadata);
+    const attachmentFile = manager.reconstructAttachmentFile(fileRecord.storageIdentifiers);
 
     return {
       id: attachment.id,
@@ -1329,7 +1334,7 @@ export class PrismaNotificationBackend<
       createdAt: attachment.createdAt,
       file: attachmentFile,
       description: attachment.description ?? undefined,
-      storageMetadata: fileRecord.storageMetadata,
+      storageMetadata: fileRecord.storageIdentifiers,
     };
   }
 }
