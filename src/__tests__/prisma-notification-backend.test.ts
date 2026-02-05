@@ -85,6 +85,12 @@ describe('PrismaNotificationBackend', () => {
       expect(mockPrismaClient.notification.findMany).toHaveBeenCalledWith({
         where: {
           status: NotificationStatusEnum.PENDING_SEND,
+          sendAfter: {
+            or: [
+              { lte: expect.any(Date) },
+              { equals: null },
+            ],
+          },
         },
       });
       expect(result).toHaveLength(1);
@@ -397,7 +403,12 @@ describe('PrismaNotificationBackend', () => {
       expect(mockPrismaClient.notification.findMany).toHaveBeenCalledWith({
         where: {
           status: NotificationStatusEnum.PENDING_SEND,
-          sendAfter: null,
+          sendAfter: {
+            or: [
+              { lte: expect.any(Date) },
+              { equals: null },
+            ],
+          },
         },
         skip: 0,
         take: 100,
@@ -418,7 +429,12 @@ describe('PrismaNotificationBackend', () => {
       expect(mockPrismaClient.notification.findMany).toHaveBeenCalledWith({
         where: {
           status: NotificationStatusEnum.PENDING_SEND,
-          sendAfter: null,
+          sendAfter: {
+            or: [
+              { lte: expect.any(Date) },
+              { equals: null },
+            ],
+          },
         },
         skip: 100,
         take: 50,
@@ -440,7 +456,7 @@ describe('PrismaNotificationBackend', () => {
             not: NotificationStatusEnum.PENDING_SEND,
           },
           sendAfter: {
-            lte: expect.any(Date),
+            gt: expect.any(Date),
           },
         },
       });
@@ -646,7 +662,7 @@ describe('PrismaNotificationBackend', () => {
             not: NotificationStatusEnum.PENDING_SEND,
           },
           sendAfter: {
-            lte: expect.any(Date),
+            gt: expect.any(Date),
           },
         },
       });
@@ -678,7 +694,7 @@ describe('PrismaNotificationBackend', () => {
             not: NotificationStatusEnum.PENDING_SEND,
           },
           sendAfter: {
-            lte: expect.any(Date),
+            gt: expect.any(Date),
           },
         },
         skip: 0,
@@ -995,7 +1011,7 @@ describe('PrismaNotificationBackend', () => {
             not: NotificationStatusEnum.PENDING_SEND,
           },
           sendAfter: {
-            lte: expect.any(Date),
+            gt: expect.any(Date),
           },
         },
         skip: 0,
@@ -1018,7 +1034,7 @@ describe('PrismaNotificationBackend', () => {
             not: NotificationStatusEnum.PENDING_SEND,
           },
           sendAfter: {
-            lte: expect.any(Date),
+            gt: expect.any(Date),
           },
         },
         skip: 75,
@@ -1039,7 +1055,7 @@ describe('PrismaNotificationBackend', () => {
             not: NotificationStatusEnum.PENDING_SEND,
           },
           sendAfter: {
-            lte: expect.any(Date),
+            gt: expect.any(Date),
           },
         },
         skip: 0,

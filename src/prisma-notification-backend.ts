@@ -98,7 +98,7 @@ export interface NotificationPrismaClientInterface<NotificationIdType, UserIdTyp
     findMany(args?: {
       where?: {
         status?: NotificationStatus | { not: NotificationStatus };
-        sendAfter?: { lte: Date } | null;
+        sendAfter?: { gt: Date } | null | { or: ({ lte: Date } | { equals: null })[] };
         userId?: UserIdType | null;
         readAt?: null;
         emailOrPhone?: string | { not: null };
@@ -767,7 +767,12 @@ export class PrismaNotificationBackend<
 
   async getAllPendingNotifications(): Promise<AnyDatabaseNotification<Config>[]> {
     const notifications = await this.prismaClient.notification.findMany({
-      where: { status: NotificationStatusEnum.PENDING_SEND },
+      where: {
+        status: NotificationStatusEnum.PENDING_SEND,
+        sendAfter: {
+          or: [{ lte: new Date() }, { equals: null }],
+        },
+      },
     });
 
     return notifications.map((n) => this.serializeAnyNotification(n));
@@ -781,7 +786,7 @@ export class PrismaNotificationBackend<
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         status: NotificationStatusEnum.PENDING_SEND,
-        sendAfter: null,
+        sendAfter: { or: [{ lte: new Date() }, { equals: null }], },
       },
       skip: page * pageSize,
       take: pageSize,
@@ -795,7 +800,7 @@ export class PrismaNotificationBackend<
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         status: { not: NotificationStatusEnum.PENDING_SEND },
-        sendAfter: { lte: new Date() },
+        sendAfter: { gt: new Date() },
       },
     });
 
@@ -809,7 +814,7 @@ export class PrismaNotificationBackend<
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         status: { not: NotificationStatusEnum.PENDING_SEND },
-        sendAfter: { lte: new Date() },
+        sendAfter: { gt: new Date() },
       },
       skip: page * pageSize,
       take: pageSize,
@@ -829,9 +834,7 @@ export class PrismaNotificationBackend<
         status: {
           not: NotificationStatusEnum.PENDING_SEND,
         },
-        sendAfter: {
-          lte: new Date(),
-        },
+        sendAfter: { gt: new Date() },
       },
     });
 
@@ -852,7 +855,7 @@ export class PrismaNotificationBackend<
           not: NotificationStatusEnum.PENDING_SEND,
         },
         sendAfter: {
-          lte: new Date(),
+          gt: new Date(),
         },
       },
       skip: page * pageSize,
