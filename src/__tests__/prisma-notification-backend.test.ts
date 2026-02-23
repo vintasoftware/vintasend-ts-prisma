@@ -2,6 +2,7 @@ import type {
   AnyDatabaseNotification,
   DatabaseNotification,
 } from 'vintasend/dist/types/notification';
+import type { NotificationFilter } from 'vintasend/dist/services/notification-backends/base-notification-backend';
 import { PrismaNotificationBackendFactory } from '../index';
 import { NotificationStatusEnum, NotificationTypeEnum } from '../prisma-notification-backend';
 import type {
@@ -616,17 +617,18 @@ describe('PrismaNotificationBackend', () => {
     });
   });
 
-  describe('storeContextUsed', () => {
-    it('should store the context used for a notification', async () => {
+  describe('storeAdapterAndContextUsed', () => {
+    it('should store the context and adapter used for a notification', async () => {
       const context = { value1: 'test' };
       const updateMock = mockPrismaClient.notification.update as jest.Mock;
       updateMock.mockResolvedValue({ ...mockNotification, contextUsed: context });
 
-      await backend.storeContextUsed('1', context);
+      await backend.storeAdapterAndContextUsed('1', 'test-adapter', context);
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
         where: { id: '1' },
         data: {
+          adapterUsed: 'test-adapter',
           contextUsed: context,
         },
       });
@@ -637,11 +639,14 @@ describe('PrismaNotificationBackend', () => {
       const updateMock = mockPrismaClient.notification.update as jest.Mock;
       updateMock.mockRejectedValue(new Error('Update failed'));
 
-      await expect(backend.storeContextUsed('1', context)).rejects.toThrow('Update failed');
+      await expect(backend.storeAdapterAndContextUsed('1', 'test-adapter', context)).rejects.toThrow(
+        'Update failed',
+      );
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
         where: { id: '1' },
         data: {
+          adapterUsed: 'test-adapter',
           contextUsed: context,
         },
       });
@@ -1062,6 +1067,162 @@ describe('PrismaNotificationBackend', () => {
         take: 100,
       });
       expect(result).toHaveLength(0);
+    });
+  });
+
+  describe('filterNotifications', () => {
+    it('should filter notifications with simple field filters and pagination', async () => {
+      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      findManyMock.mockResolvedValue([mockNotification]);
+
+      const filter: NotificationFilter<any> = {
+        status: NotificationStatusEnum.PENDING_SEND,
+        userId: 'user1',
+        contextName: 'testContext',
+      };
+
+      const result = await backend.filterNotifications(filter, 2, 10);
+
+      expect(mockPrismaClient.notification.findMany).toHaveBeenCalledWith({
+        where: {
+          status: NotificationStatusEnum.PENDING_SEND,
+          userId: 'user1',
+          contextName: 'testContext',
+        },
+        skip: 20,
+        take: 10,
+      });
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        id: '1',
+        userId: 'user1',
+      });
+    });
+
+    it('should convert nested logical filters to prisma where clause', async () => {
+      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      findManyMock.mockResolvedValue([mockNotification]);
+
+      const createdFrom = new Date('2024-01-01T00:00:00.000Z');
+      const createdTo = new Date('2024-01-31T23:59:59.999Z');
+      const sendAfterFrom = new Date('2024-01-10T00:00:00.000Z');
+      const sentTo = new Date('2024-02-15T23:59:59.999Z');
+
+      const filter: NotificationFilter<any> = {
+        and: [
+          {
+            status: [NotificationStatusEnum.SENT, NotificationStatusEnum.FAILED],
+          },
+          {
+            or: [
+              {
+                notificationType: [NotificationTypeEnum.EMAIL, NotificationTypeEnum.SMS],
+              },
+              {
+                adapterUsed: ['adapter-a', 'adapter-b'],
+              },
+            ],
+          },
+          {
+            not: {
+              contextName: 'internal-context',
+            },
+          },
+          {
+            bodyTemplate: 'body-template-v1',
+            subjectTemplate: 'subject-template-v1',
+            sendAfterRange: {
+              from: sendAfterFrom,
+            },
+            createdAtRange: {
+              from: createdFrom,
+              to: createdTo,
+            },
+            sentAtRange: {
+              to: sentTo,
+            },
+          },
+        ],
+      };
+
+      await backend.filterNotifications(filter, 0, 50);
+
+      expect(mockPrismaClient.notification.findMany).toHaveBeenCalledWith({
+        where: {
+          AND: [
+            {
+              status: {
+                in: [NotificationStatusEnum.SENT, NotificationStatusEnum.FAILED],
+              },
+            },
+            {
+              OR: [
+                {
+                  notificationType: {
+                    in: [NotificationTypeEnum.EMAIL, NotificationTypeEnum.SMS],
+                  },
+                },
+                {
+                  adapterUsed: {
+                    in: ['adapter-a', 'adapter-b'],
+                  },
+                },
+              ],
+            },
+            {
+              NOT: {
+                contextName: 'internal-context',
+              },
+            },
+            {
+              bodyTemplate: 'body-template-v1',
+              subjectTemplate: 'subject-template-v1',
+              sendAfter: {
+                gte: sendAfterFrom,
+              },
+              createdAt: {
+                gte: createdFrom,
+                lte: createdTo,
+              },
+              sentAt: {
+                lte: sentTo,
+              },
+            },
+          ],
+        },
+        skip: 0,
+        take: 50,
+      });
+    });
+
+    it('should ignore empty date range objects in private filter converter', () => {
+      const sendAfterTo = new Date('2024-01-15T23:59:59.999Z');
+      const sentFrom = new Date('2024-02-01T00:00:00.000Z');
+
+      const where = (
+        backend as unknown as {
+          convertNotificationFilterToPrismaWhere: (
+            filter: NotificationFilter<any>,
+          ) => Record<string, unknown>;
+        }
+      ).convertNotificationFilterToPrismaWhere({
+        sendAfterRange: {
+          to: sendAfterTo,
+        },
+        createdAtRange: {},
+        sentAtRange: {
+          from: sentFrom,
+        },
+      });
+
+      expect(where).toEqual({
+        sendAfter: {
+          lte: sendAfterTo,
+        },
+        sentAt: {
+          gte: sentFrom,
+        },
+      });
     });
   });
 

@@ -1,4 +1,4 @@
-import type { BaseNotificationBackend } from 'vintasend/dist/services/notification-backends/base-notification-backend';
+import type { BaseNotificationBackend, NotificationFilter } from 'vintasend/dist/services/notification-backends/base-notification-backend';
 import type { InputJsonValue, JsonValue } from 'vintasend/dist/types/json-values';
 import type {
   AnyNotificationInput,
@@ -90,19 +90,41 @@ export interface PrismaNotificationAttachmentModel {
   attachmentFile?: PrismaAttachmentFileModel;
 }
 
+type PrismaPendingSendAfterFilter = { or: ({ lte: Date } | { equals: null })[] };
+
+type PrismaDateRangeFilter = {
+  gte?: Date;
+  lte?: Date;
+};
+
+type PrismaNotificationWhereInput<NotificationIdType, UserIdType> = {
+  AND?: PrismaNotificationWhereInput<NotificationIdType, UserIdType>[];
+  OR?: PrismaNotificationWhereInput<NotificationIdType, UserIdType>[];
+  NOT?:
+    | PrismaNotificationWhereInput<NotificationIdType, UserIdType>
+    | PrismaNotificationWhereInput<NotificationIdType, UserIdType>[];
+  id?: NotificationIdType;
+  status?: NotificationStatus | { not: NotificationStatus } | { in: NotificationStatus[] };
+  notificationType?: NotificationType | { in: NotificationType[] };
+  sendAfter?: { gt: Date } | null | PrismaPendingSendAfterFilter | PrismaDateRangeFilter;
+  userId?: UserIdType | null;
+  readAt?: null;
+  emailOrPhone?: string | { not: null };
+  adapterUsed?: string | { in: string[] };
+  bodyTemplate?: string;
+  subjectTemplate?: string;
+  contextName?: string;
+  createdAt?: PrismaDateRangeFilter;
+  sentAt?: PrismaDateRangeFilter;
+};
+
 export interface NotificationPrismaClientInterface<NotificationIdType, UserIdType> {
   $transaction<R>(
     fn: (prisma: NotificationPrismaClientInterface<NotificationIdType, UserIdType>) => Promise<R>,
   ): Promise<R>;
   notification: {
     findMany(args?: {
-      where?: {
-        status?: NotificationStatus | { not: NotificationStatus };
-        sendAfter?: { gt: Date } | null | { or: ({ lte: Date } | { equals: null })[] };
-        userId?: UserIdType | null;
-        readAt?: null;
-        emailOrPhone?: string | { not: null };
-      };
+      where?: PrismaNotificationWhereInput<NotificationIdType, UserIdType>;
       skip?: number;
       take?: number;
       include?: {
@@ -316,6 +338,106 @@ export class PrismaNotificationBackend<
 
     if (opts.checkStatus) {
       where.status = opts.checkStatus;
+    }
+
+    return where;
+  }
+
+  private convertNotificationFilterToPrismaWhere(
+    filter: NotificationFilter<Config>,
+  ): PrismaNotificationWhereInput<Config['NotificationIdType'], Config['UserIdType']> {
+    if ('and' in filter) {
+      return {
+        AND: filter.and.map((subFilter) => this.convertNotificationFilterToPrismaWhere(subFilter)),
+      };
+    }
+
+    if ('or' in filter) {
+      return {
+        OR: filter.or.map((subFilter) => this.convertNotificationFilterToPrismaWhere(subFilter)),
+      };
+    }
+
+    if ('not' in filter) {
+      return {
+        NOT: this.convertNotificationFilterToPrismaWhere(filter.not),
+      };
+    }
+
+    const where: PrismaNotificationWhereInput<
+      Config['NotificationIdType'],
+      Config['UserIdType']
+    > = {};
+
+    if (filter.status !== undefined) {
+      where.status = Array.isArray(filter.status) ? { in: filter.status } : filter.status;
+    }
+
+    if (filter.notificationType !== undefined) {
+      where.notificationType = Array.isArray(filter.notificationType)
+        ? { in: filter.notificationType }
+        : filter.notificationType;
+    }
+
+    if (filter.adapterUsed !== undefined) {
+      where.adapterUsed = Array.isArray(filter.adapterUsed)
+        ? { in: filter.adapterUsed }
+        : filter.adapterUsed;
+    }
+
+    if (filter.userId !== undefined) {
+      where.userId = filter.userId;
+    }
+
+    if (filter.bodyTemplate !== undefined) {
+      where.bodyTemplate = filter.bodyTemplate;
+    }
+
+    if (filter.subjectTemplate !== undefined) {
+      where.subjectTemplate = filter.subjectTemplate;
+    }
+
+    if (filter.contextName !== undefined) {
+      where.contextName = filter.contextName;
+    }
+
+    if (filter.sendAfterRange) {
+      const sendAfterFilter: PrismaDateRangeFilter = {};
+      if (filter.sendAfterRange.from) {
+        sendAfterFilter.gte = filter.sendAfterRange.from;
+      }
+      if (filter.sendAfterRange.to) {
+        sendAfterFilter.lte = filter.sendAfterRange.to;
+      }
+      if (Object.keys(sendAfterFilter).length > 0) {
+        where.sendAfter = sendAfterFilter;
+      }
+    }
+
+    if (filter.createdAtRange) {
+      const createdAtFilter: PrismaDateRangeFilter = {};
+      if (filter.createdAtRange.from) {
+        createdAtFilter.gte = filter.createdAtRange.from;
+      }
+      if (filter.createdAtRange.to) {
+        createdAtFilter.lte = filter.createdAtRange.to;
+      }
+      if (Object.keys(createdAtFilter).length > 0) {
+        where.createdAt = createdAtFilter;
+      }
+    }
+
+    if (filter.sentAtRange) {
+      const sentAtFilter: PrismaDateRangeFilter = {};
+      if (filter.sentAtRange.from) {
+        sentAtFilter.gte = filter.sentAtRange.from;
+      }
+      if (filter.sentAtRange.to) {
+        sentAtFilter.lte = filter.sentAtRange.to;
+      }
+      if (Object.keys(sentAtFilter).length > 0) {
+        where.sentAt = sentAtFilter;
+      }
     }
 
     return where;
@@ -1140,15 +1262,16 @@ export class PrismaNotificationBackend<
     return notification?.user?.email;
   }
 
-  async storeContextUsed(
+  async storeAdapterAndContextUsed(
     notificationId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
+    adapterKey: string,
     context: InputJsonValue,
   ): Promise<void> {
     await this.prismaClient.notification.update({
       where: { id: notificationId as Config['NotificationIdType'] },
-      data: { contextUsed: context },
+      data: { contextUsed: context, adapterUsed: adapterKey },
     });
   }
 
@@ -1250,6 +1373,21 @@ export class PrismaNotificationBackend<
         `Attachment ${attachmentId} not found for notification ${notificationId}`,
       );
     }
+  }
+
+  async filterNotifications(
+    filter: NotificationFilter<Config>,
+    page: number,
+    pageSize: number,
+  ): Promise<AnyDatabaseNotification<Config>[]> {
+    const where = this.convertNotificationFilterToPrismaWhere(filter);
+    const notifications = await this.prismaClient.notification.findMany({
+      where,
+      skip: page * pageSize,
+      take: pageSize,
+    });
+
+    return notifications.map((n) => this.serializeAnyNotification(n));
   }
 
   /**
