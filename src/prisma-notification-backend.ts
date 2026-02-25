@@ -97,6 +97,26 @@ type PrismaDateRangeFilter = {
   lte?: Date;
 };
 
+type StringFilterLookup = {
+  lookup: 'exact' | 'startsWith' | 'endsWith' | 'includes';
+  value: string;
+  caseSensitive?: boolean;
+};
+
+type StringFieldFilter = string | StringFilterLookup;
+
+function isStringFilterLookup(value: StringFieldFilter): value is StringFilterLookup {
+  return typeof value === 'object' && value !== null && 'lookup' in value && 'value' in value;
+}
+
+type PrismaStringFilter = {
+  equals?: string;
+  startsWith?: string;
+  endsWith?: string;
+  contains?: string;
+  mode?: 'default' | 'insensitive';
+};
+
 type PrismaNotificationWhereInput<NotificationIdType, UserIdType> = {
   AND?: PrismaNotificationWhereInput<NotificationIdType, UserIdType>[];
   OR?: PrismaNotificationWhereInput<NotificationIdType, UserIdType>[];
@@ -111,9 +131,9 @@ type PrismaNotificationWhereInput<NotificationIdType, UserIdType> = {
   readAt?: null;
   emailOrPhone?: string | { not: null };
   adapterUsed?: string | { in: string[] };
-  bodyTemplate?: string;
-  subjectTemplate?: string;
-  contextName?: string;
+  bodyTemplate?: string | PrismaStringFilter;
+  subjectTemplate?: string | PrismaStringFilter;
+  contextName?: string | PrismaStringFilter;
   createdAt?: PrismaDateRangeFilter;
   sentAt?: PrismaDateRangeFilter;
 };
@@ -343,6 +363,27 @@ export class PrismaNotificationBackend<
     return where;
   }
 
+  private stringFilterLookupToPrismaWhere(filter: StringFieldFilter): string | PrismaStringFilter {
+    if (!isStringFilterLookup(filter)) {
+      return filter;
+    }
+
+    const mode = filter.caseSensitive === false ? 'insensitive' : 'default';
+
+    switch (filter.lookup) {
+      case 'exact':
+        return { equals: filter.value, mode };
+      case 'startsWith':
+        return { startsWith: filter.value, mode };
+      case 'endsWith':
+        return { endsWith: filter.value, mode };
+      case 'includes':
+        return { contains: filter.value, mode };
+      default:
+        return filter.value;
+    }
+  }
+
   private convertNotificationFilterToPrismaWhere(
     filter: NotificationFilter<Config>,
   ): PrismaNotificationWhereInput<Config['NotificationIdType'], Config['UserIdType']> {
@@ -390,15 +431,15 @@ export class PrismaNotificationBackend<
     }
 
     if (filter.bodyTemplate !== undefined) {
-      where.bodyTemplate = filter.bodyTemplate;
+      where.bodyTemplate = this.stringFilterLookupToPrismaWhere(filter.bodyTemplate);
     }
 
     if (filter.subjectTemplate !== undefined) {
-      where.subjectTemplate = filter.subjectTemplate;
+      where.subjectTemplate = this.stringFilterLookupToPrismaWhere(filter.subjectTemplate);
     }
 
     if (filter.contextName !== undefined) {
-      where.contextName = filter.contextName;
+      where.contextName = this.stringFilterLookupToPrismaWhere(filter.contextName);
     }
 
     if (filter.sendAfterRange) {

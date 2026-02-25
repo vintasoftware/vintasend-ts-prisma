@@ -1224,6 +1224,147 @@ describe('PrismaNotificationBackend', () => {
         },
       });
     });
+
+    it('should map startsWith lookup to prisma startsWith filter', async () => {
+      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      findManyMock.mockResolvedValue([mockNotification]);
+
+      await backend.filterNotifications(
+        ({
+          bodyTemplate: { lookup: 'startsWith', value: 'welcome-' },
+        } as unknown as NotificationFilter<any>),
+        0,
+        10,
+      );
+
+      expect(findManyMock).toHaveBeenCalledWith({
+        where: {
+          bodyTemplate: {
+            startsWith: 'welcome-',
+            mode: 'default',
+          },
+        },
+        skip: 0,
+        take: 10,
+      });
+    });
+
+    it('should map endsWith lookup to prisma endsWith filter', async () => {
+      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      findManyMock.mockResolvedValue([mockNotification]);
+
+      await backend.filterNotifications(
+        ({
+          subjectTemplate: { lookup: 'endsWith', value: '-suffix' },
+        } as unknown as NotificationFilter<any>),
+        0,
+        10,
+      );
+
+      expect(findManyMock).toHaveBeenCalledWith({
+        where: {
+          subjectTemplate: {
+            endsWith: '-suffix',
+            mode: 'default',
+          },
+        },
+        skip: 0,
+        take: 10,
+      });
+    });
+
+    it('should map includes lookup to prisma contains filter', async () => {
+      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      findManyMock.mockResolvedValue([mockNotification]);
+
+      await backend.filterNotifications(
+        ({
+          contextName: { lookup: 'includes', value: 'core' },
+        } as unknown as NotificationFilter<any>),
+        0,
+        10,
+      );
+
+      expect(findManyMock).toHaveBeenCalledWith({
+        where: {
+          contextName: {
+            contains: 'core',
+            mode: 'default',
+          },
+        },
+        skip: 0,
+        take: 10,
+      });
+    });
+
+    it('should map exact lookup to prisma equals filter', async () => {
+      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      findManyMock.mockResolvedValue([mockNotification]);
+
+      await backend.filterNotifications(
+        ({
+          bodyTemplate: { lookup: 'exact', value: 'template-v1' },
+        } as unknown as NotificationFilter<any>),
+        0,
+        10,
+      );
+
+      expect(findManyMock).toHaveBeenCalledWith({
+        where: {
+          bodyTemplate: {
+            equals: 'template-v1',
+            mode: 'default',
+          },
+        },
+        skip: 0,
+        take: 10,
+      });
+    });
+
+    it('should map caseInsensitive lookup to prisma mode insensitive', async () => {
+      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      findManyMock.mockResolvedValue([mockNotification]);
+
+      await backend.filterNotifications(
+        ({
+          bodyTemplate: { lookup: 'startsWith', value: 'Welcome-', caseSensitive: false },
+        } as unknown as NotificationFilter<any>),
+        0,
+        10,
+      );
+
+      expect(findManyMock).toHaveBeenCalledWith({
+        where: {
+          bodyTemplate: {
+            startsWith: 'Welcome-',
+            mode: 'insensitive',
+          },
+        },
+        skip: 0,
+        take: 10,
+      });
+    });
+
+    it('should keep backward compatibility for plain string filters', async () => {
+      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      findManyMock.mockResolvedValue([mockNotification]);
+
+      await backend.filterNotifications(
+        {
+          bodyTemplate: 'template-v1',
+        },
+        0,
+        10,
+      );
+
+      expect(findManyMock).toHaveBeenCalledWith({
+        where: {
+          bodyTemplate: 'template-v1',
+        },
+        skip: 0,
+        take: 10,
+      });
+    });
   });
 
   describe('deserializeNotificationForUpdate', () => {
