@@ -70,6 +70,7 @@ describe('PrismaNotificationBackend', () => {
     contextUsed: null,
     extraParams: null,
     adapterUsed: null,
+    gitCommitSha: null,
     sentAt: null,
     readAt: null,
     createdAt: new Date(),
@@ -141,6 +142,45 @@ describe('PrismaNotificationBackend', () => {
         id: '1',
         userId: 'user1',
         notificationType: NotificationTypeEnum.EMAIL,
+      });
+    });
+
+    it('should include gitCommitSha in create payload when provided', async () => {
+      const gitCommitSha = 'a'.repeat(40);
+      const input = {
+        id: undefined,
+        userId: 'user1',
+        notificationType: NotificationTypeEnum.EMAIL,
+        bodyTemplate: 'Test Body',
+        contextName: 'testContext' as keyof TestContexts,
+        contextParameters: { param1: 'value1' },
+        title: 'Test Title',
+        subjectTemplate: 'Test Subject',
+        extraParams: { key: 'value' },
+        sendAfter: null,
+        gitCommitSha,
+      };
+
+      const createMock = mockPrismaClient.notification.create as jest.Mock;
+      createMock.mockResolvedValue({
+        ...mockNotification,
+        gitCommitSha,
+      });
+
+      // biome-ignore lint/suspicious/noExplicitAny: testing backend mapper behavior with persisted field
+      await backend.persistNotification(input as any);
+
+      expect(mockPrismaClient.notification.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          gitCommitSha,
+        }),
+        include: {
+          attachments: {
+            include: {
+              attachmentFile: true,
+            },
+          },
+        },
       });
     });
   });
@@ -831,6 +871,7 @@ describe('PrismaNotificationBackend', () => {
         contextUsed: fullNotification.contextUsed,
         extraParams: fullNotification.extraParams,
         adapterUsed: fullNotification.adapterUsed,
+        gitCommitSha: fullNotification.gitCommitSha,
         sentAt: fullNotification.sentAt,
         readAt: fullNotification.readAt,
         createdAt: fullNotification.createdAt,
@@ -1368,6 +1409,29 @@ describe('PrismaNotificationBackend', () => {
   });
 
   describe('deserializeNotificationForUpdate', () => {
+    it('should include gitCommitSha when updating notification', async () => {
+      const updateData = {
+        gitCommitSha: 'b'.repeat(40),
+      };
+
+      const updatedNotification = {
+        ...mockNotification,
+        gitCommitSha: updateData.gitCommitSha,
+      };
+
+      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      updateMock.mockResolvedValue(updatedNotification);
+
+      await backend.persistNotificationUpdate('1', updateData);
+
+      expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
+        where: { id: '1' },
+        data: expect.objectContaining({
+          gitCommitSha: updateData.gitCommitSha,
+        }),
+      });
+    });
+
     it('should not include contextParameters when undefined', async () => {
       const updateData = {
         title: 'Updated Title',
@@ -1761,6 +1825,67 @@ describe('PrismaNotificationBackend', () => {
           lastName: 'Doe',
         });
         expect(result).not.toHaveProperty('userId');
+      });
+
+      it('should include gitCommitSha in one-off create payload when provided', async () => {
+        const gitCommitSha = 'c'.repeat(40);
+        const input = {
+          emailOrPhone: 'oneoff@example.com',
+          firstName: 'John',
+          lastName: 'Doe',
+          notificationType: NotificationTypeEnum.EMAIL,
+          bodyTemplate: 'Test Body',
+          contextName: 'testContext' as keyof TestContexts,
+          contextParameters: { param1: 'value1' },
+          title: 'Test Title',
+          subjectTemplate: 'Test Subject',
+          extraParams: { key: 'value' },
+          sendAfter: null,
+          gitCommitSha,
+        };
+
+        const oneOffNotification = {
+          id: '1',
+          userId: null,
+          emailOrPhone: 'oneoff@example.com',
+          firstName: 'John',
+          lastName: 'Doe',
+          notificationType: NotificationTypeEnum.EMAIL,
+          title: 'Test Title',
+          bodyTemplate: 'Test Body',
+          contextName: 'testContext',
+          contextParameters: { param1: 'value1' },
+          sendAfter: null,
+          subjectTemplate: 'Test Subject',
+          status: NotificationStatusEnum.PENDING_SEND,
+          contextUsed: null,
+          extraParams: { key: 'value' },
+          adapterUsed: null,
+          gitCommitSha,
+          sentAt: null,
+          readAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+
+        const createMock = mockPrismaClient.notification.create as jest.Mock;
+        createMock.mockResolvedValue(oneOffNotification);
+
+        // biome-ignore lint/suspicious/noExplicitAny: testing backend mapper behavior with persisted field
+        await backend.persistOneOffNotification(input as any);
+
+        expect(mockPrismaClient.notification.create).toHaveBeenCalledWith({
+          data: expect.objectContaining({
+            gitCommitSha,
+          }),
+          include: {
+            attachments: {
+              include: {
+                attachmentFile: true,
+              },
+            },
+          },
+        });
       });
     });
 

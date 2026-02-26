@@ -61,6 +61,7 @@ export interface PrismaNotificationModel<IdType, UserId> {
   adapterUsed: string | null;
   sentAt: Date | null;
   readAt: Date | null;
+  gitCommitSha: string | null;
   createdAt: Date;
   updatedAt: Date;
   user?: {
@@ -265,6 +266,7 @@ export interface BaseNotificationCreateInput<UserIdType> {
   adapterUsed?: string | null;
   sentAt?: Date | null;
   readAt?: Date | null;
+  gitCommitSha?: string | null;
   emailOrPhone?: string | null;
   firstName?: string | null;
   lastName?: string | null;
@@ -303,6 +305,7 @@ export interface BaseNotificationUpdateInput<UserIdType> {
   adapterUsed?: string | null;
   sentAt?: Date | null;
   readAt?: Date | null;
+  gitCommitSha?: string | null;
 }
 
 function convertJsonValueToRecord(jsonValue: JsonValue): Record<string, string | number | boolean> {
@@ -518,6 +521,7 @@ export class PrismaNotificationBackend<
       adapterUsed: notification.adapterUsed,
       sentAt: notification.sentAt,
       readAt: notification.readAt,
+      gitCommitSha: notification.gitCommitSha,
       createdAt: notification.createdAt,
       updatedAt: notification.updatedAt,
       // Serialize attachments if present and attachmentManager is available
@@ -610,6 +614,10 @@ export class PrismaNotificationBackend<
       sendAfter: notification.sendAfter,
       subjectTemplate: notification.subjectTemplate,
       extraParams: notification.extraParams as InputJsonValue,
+      gitCommitSha:
+        'gitCommitSha' in notification && notification.gitCommitSha !== undefined
+          ? (notification.gitCommitSha as string | null)
+          : null,
       // Only include one-off fields if this is actually a one-off notification
       ...(isOneOff && {
         emailOrPhone: 'emailOrPhone' in notification ? notification.emailOrPhone : null,
@@ -742,6 +750,9 @@ export class PrismaNotificationBackend<
     }
     if (notification.readAt !== undefined) {
       data.readAt = notification.readAt;
+    }
+    if (notification.gitCommitSha !== undefined) {
+      data.gitCommitSha = notification.gitCommitSha;
     }
 
     return data;
@@ -906,6 +917,10 @@ export class PrismaNotificationBackend<
   deserializeNotificationForUpdate(
     notification: Partial<Notification<Config>>,
   ): Partial<Parameters<typeof this.prismaClient.notification.update>[0]['data']> {
+    const notificationWithOptionalGitCommitSha = notification as Partial<
+      Notification<Config>
+    > & { gitCommitSha?: string | null };
+
     return {
       ...(notification.userId ? { user: { connect: { id: notification.userId } } } : {}),
       ...(notification.notificationType
@@ -925,6 +940,9 @@ export class PrismaNotificationBackend<
         : {}),
       ...(notification.sendAfter ? { sendAfter: notification.sendAfter } : {}),
       ...(notification.subjectTemplate ? { subjectTemplate: notification.subjectTemplate } : {}),
+      ...(notificationWithOptionalGitCommitSha.gitCommitSha !== undefined
+        ? { gitCommitSha: notificationWithOptionalGitCommitSha.gitCommitSha }
+        : {}),
     } as Partial<Parameters<typeof this.prismaClient.notification.update>[0]['data']>;
   }
 

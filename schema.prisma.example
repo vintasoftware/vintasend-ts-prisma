@@ -34,6 +34,7 @@ model Notification {
   contextUsed                 Json?
   extraParams                 Json?
   adapterUsed                 String?
+  gitCommitSha                String?
   sentAt                      DateTime?
   readAt                      DateTime?
   createdAt                   DateTime                  @default(now())
@@ -44,6 +45,7 @@ model Notification {
   @@index([status, sendAfter])
   @@index([userId])
   @@index([emailOrPhone])
+  @@index([gitCommitSha])
 }
 
 // Reusable attachment files (stored once, referenced many times)

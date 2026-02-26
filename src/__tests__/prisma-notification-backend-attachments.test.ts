@@ -67,6 +67,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
     contextUsed: null,
     extraParams: null,
     adapterUsed: null,
+    gitCommitSha: null,
     sentAt: null,
     readAt: null,
     createdAt: new Date(),
