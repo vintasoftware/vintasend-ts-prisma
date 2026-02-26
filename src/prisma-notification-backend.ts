@@ -328,7 +328,12 @@ export class PrismaNotificationBackend<
   constructor(
     private prismaClient: Client,
     private attachmentManager?: BaseAttachmentManager,
+    private identifier = 'default-prisma',
   ) {}
+
+  getBackendIdentifier(): string {
+    return this.identifier;
+  }
 
   /**
    * Inject attachment manager (called by VintaSend when both service and backend exist)
@@ -1593,7 +1598,7 @@ export class PrismaNotificationBackendFactory<Config extends BaseNotificationTyp
       Config['NotificationIdType'],
       Config['UserIdType']
     >,
-  >(prismaClient: Client, attachmentManager?: BaseAttachmentManager) {
-    return new PrismaNotificationBackend<Client, Config>(prismaClient, attachmentManager);
+  >(prismaClient: Client, attachmentManager?: BaseAttachmentManager, identifier?: string) {
+    return new PrismaNotificationBackend<Client, Config>(prismaClient, attachmentManager, identifier);
   }
 }
