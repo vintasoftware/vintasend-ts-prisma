@@ -1,7 +1,6 @@
 import type { BaseNotificationBackend, NotificationFilter } from 'vintasend/dist/services/notification-backends/base-notification-backend';
 import type { InputJsonValue, JsonValue } from 'vintasend/dist/types/json-values';
 import type {
-  AnyNotificationInput,
   DatabaseNotification,
   Notification,
   NotificationInput,
@@ -591,8 +590,12 @@ export class PrismaNotificationBackend<
    * Validates that notification has either userId or emailOrPhone (but not neither)
    */
   private buildCreateData(
-    notification: AnyNotificationInput<Config> | Omit<AnyNotificationInput<Config>, 'id'>,
+    notification: Omit<AnyNotification<Config>, 'id'>,
   ): PrismaNotificationCreateData<Config['UserIdType']> {
+    const notificationWithOneOffFields = notification as Partial<
+      Pick<OneOffNotificationInput<Config>, 'emailOrPhone' | 'firstName' | 'lastName'>
+    >;
+
     const hasUserId = 'userId' in notification && notification.userId != null;
     const hasEmailOrPhone = 'emailOrPhone' in notification && notification.emailOrPhone != null;
 
@@ -620,9 +623,9 @@ export class PrismaNotificationBackend<
           : null,
       // Only include one-off fields if this is actually a one-off notification
       ...(isOneOff && {
-        emailOrPhone: 'emailOrPhone' in notification ? notification.emailOrPhone : null,
-        firstName: 'firstName' in notification ? notification.firstName ?? null : null,
-        lastName: 'lastName' in notification ? notification.lastName ?? null : null,
+        emailOrPhone: notificationWithOneOffFields.emailOrPhone ?? null,
+        firstName: notificationWithOneOffFields.firstName ?? null,
+        lastName: notificationWithOneOffFields.lastName ?? null,
       }),
     };
 
@@ -753,6 +756,51 @@ export class PrismaNotificationBackend<
     }
     if (notification.gitCommitSha !== undefined) {
       data.gitCommitSha = notification.gitCommitSha;
+    }
+
+    return data;
+  }
+
+  /**
+   * Build update data from one-off input shape (no database-only fields)
+   */
+  private buildOneOffInputUpdateData(
+    notification: Partial<Omit<OneOffNotificationInput<Config>, 'id'>>,
+  ): Partial<BaseNotificationUpdateInput<Config['UserIdType']>> {
+    const data: Partial<BaseNotificationUpdateInput<Config['UserIdType']>> = {};
+
+    if (notification.emailOrPhone !== undefined) {
+      data.emailOrPhone = notification.emailOrPhone;
+    }
+    if (notification.firstName !== undefined) {
+      data.firstName = notification.firstName;
+    }
+    if (notification.lastName !== undefined) {
+      data.lastName = notification.lastName;
+    }
+    if (notification.notificationType !== undefined) {
+      data.notificationType = notification.notificationType;
+    }
+    if (notification.title !== undefined) {
+      data.title = notification.title;
+    }
+    if (notification.bodyTemplate !== undefined) {
+      data.bodyTemplate = notification.bodyTemplate;
+    }
+    if (notification.contextName !== undefined) {
+      data.contextName = notification.contextName as string;
+    }
+    if (notification.contextParameters !== undefined) {
+      data.contextParameters = notification.contextParameters as InputJsonValue;
+    }
+    if (notification.sendAfter !== undefined) {
+      data.sendAfter = notification.sendAfter;
+    }
+    if (notification.subjectTemplate !== undefined) {
+      data.subjectTemplate = notification.subjectTemplate;
+    }
+    if (notification.extraParams !== undefined) {
+      data.extraParams = notification.extraParams as InputJsonValue;
     }
 
     return data;
@@ -909,7 +957,7 @@ export class PrismaNotificationBackend<
   }
 
   deserializeNotification(
-    notification: AnyNotificationInput<Config> | Omit<AnyNotificationInput<Config>, 'id'>,
+    notification: Omit<AnyNotification<Config>, 'id'>,
   ): PrismaNotificationCreateData<Config['UserIdType']> {
     return this.buildCreateData(notification);
   }
@@ -1105,11 +1153,11 @@ export class PrismaNotificationBackend<
     notificationId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
-    notification: Partial<Omit<DatabaseOneOffNotification<Config>, 'id'>>,
+    notification: Partial<Omit<OneOffNotificationInput<Config>, 'id'>>,
   ): Promise<DatabaseOneOffNotification<Config>> {
     const updated = await this.prismaClient.notification.update({
       where: { id: notificationId as Config['NotificationIdType'] },
-      data: this.buildUpdateData(notification),
+      data: this.buildOneOffInputUpdateData(notification),
     });
 
     return this.serializeOneOffNotification(updated);
