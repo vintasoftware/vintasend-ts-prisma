@@ -3,7 +3,6 @@ import type { InputJsonValue, JsonValue } from 'vintasend/dist/types/json-values
 import type {
   DatabaseNotification,
   Notification,
-  NotificationInput,
 } from 'vintasend/dist/types/notification';
 import type {
   AnyDatabaseNotification,
@@ -250,7 +249,8 @@ type AtLeast<O extends object, K extends string> = NoExpand<
     : never
 >;
 
-export interface BaseNotificationCreateInput<UserIdType> {
+export interface BaseNotificationCreateInput<UserIdType, NotificationIdType = unknown> {
+  id?: NotificationIdType;
   // Common fields
   notificationType: NotificationType;
   title?: string | null;
@@ -328,7 +328,12 @@ export class PrismaNotificationBackend<
   constructor(
     private prismaClient: Client,
     private attachmentManager?: BaseAttachmentManager,
+    private identifier = 'default-prisma',
   ) {}
+
+  getBackendIdentifier(): string {
+    return this.identifier;
+  }
 
   /**
    * Inject attachment manager (called by VintaSend when both service and backend exist)
@@ -590,7 +595,7 @@ export class PrismaNotificationBackend<
    * Validates that notification has either userId or emailOrPhone (but not neither)
    */
   private buildCreateData(
-    notification: Omit<AnyNotification<Config>, 'id'>,
+    notification: AnyNotification<Config>,
   ): PrismaNotificationCreateData<Config['UserIdType']> {
     const notificationWithOneOffFields = notification as Partial<
       Pick<OneOffNotificationInput<Config>, 'emailOrPhone' | 'firstName' | 'lastName'>
@@ -608,7 +613,11 @@ export class PrismaNotificationBackend<
     // When both are provided, userId takes precedence (regular notification)
     const isOneOff = !hasUserId && hasEmailOrPhone;
 
-    const base: BaseNotificationCreateInput<Config['UserIdType']> = {
+    const base: BaseNotificationCreateInput<
+      Config['UserIdType'],
+      Config['NotificationIdType']
+    > = {
+      id: notification.id,
       notificationType: notification.notificationType,
       title: notification.title,
       bodyTemplate: notification.bodyTemplate,
@@ -653,9 +662,9 @@ export class PrismaNotificationBackend<
    * Deserialize a regular notification input for creation
    */
   private deserializeRegularNotification(
-    notification: NotificationInput<Config>,
+    notification: Omit<Notification<Config>, 'id'> & { id?: Config['NotificationIdType'] },
   ): PrismaNotificationCreateData<Config['UserIdType']> {
-    return this.buildCreateData(notification);
+    return this.buildCreateData(notification as Notification<Config>);
   }
 
   /**
@@ -957,9 +966,9 @@ export class PrismaNotificationBackend<
   }
 
   deserializeNotification(
-    notification: Omit<AnyNotification<Config>, 'id'>,
+    notification: Omit<AnyNotification<Config>, 'id'> & { id?: Config['NotificationIdType'] },
   ): PrismaNotificationCreateData<Config['UserIdType']> {
-    return this.buildCreateData(notification);
+    return this.buildCreateData(notification as AnyNotification<Config>);
   }
 
   deserializeNotificationForUpdate(
@@ -1113,11 +1122,14 @@ export class PrismaNotificationBackend<
   }
 
   async persistNotification(
-    notification: NotificationInput<Config>,
+    notification: Omit<Notification<Config>, 'id'> & { id?: Config['NotificationIdType'] },
   ): Promise<DatabaseNotification<Config>> {
     return this.createNotificationWithAttachments(
       notification,
-      (n) => this.deserializeRegularNotification(n as NotificationInput<Config>),
+      (n) =>
+        this.deserializeRegularNotification(
+          n as Omit<Notification<Config>, 'id'> & { id?: Config['NotificationIdType'] },
+        ),
       (db) => this.serializeRegularNotification(db),
     );
   }
@@ -1140,11 +1152,16 @@ export class PrismaNotificationBackend<
 
   /* One-off notification persistence and query methods */
   async persistOneOffNotification(
-    notification: OneOffNotificationInput<Config>,
+    notification: Omit<OneOffNotificationInput<Config>, 'id'> & {
+      id?: Config['NotificationIdType'];
+    },
   ): Promise<DatabaseOneOffNotification<Config>> {
     return this.createNotificationWithAttachments(
       notification,
-      (n) => this.buildOneOffNotificationData(n as OneOffNotificationInput<Config>),
+      (n) =>
+        this.buildOneOffNotificationData(
+          n as OneOffNotificationInput<Config> & { id?: Config['NotificationIdType'] },
+        ),
       (db) => this.serializeOneOffNotification(db),
     );
   }
@@ -1593,7 +1610,7 @@ export class PrismaNotificationBackendFactory<Config extends BaseNotificationTyp
       Config['NotificationIdType'],
       Config['UserIdType']
     >,
-  >(prismaClient: Client, attachmentManager?: BaseAttachmentManager) {
-    return new PrismaNotificationBackend<Client, Config>(prismaClient, attachmentManager);
+  >(prismaClient: Client, attachmentManager?: BaseAttachmentManager, identifier?: string) {
+    return new PrismaNotificationBackend<Client, Config>(prismaClient, attachmentManager, identifier);
   }
 }

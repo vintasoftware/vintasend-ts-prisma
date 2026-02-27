@@ -145,6 +145,42 @@ describe('PrismaNotificationBackend', () => {
       });
     });
 
+    it('should persist notification with predefined id when provided', async () => {
+      const predefinedId = 'notification-predefined-id';
+      const input = {
+        id: predefinedId,
+        userId: 'user1',
+        notificationType: NotificationTypeEnum.EMAIL,
+        bodyTemplate: 'Test Body',
+        contextName: 'testContext' as keyof TestContexts,
+        contextParameters: { param1: 'value1' },
+        title: 'Test Title',
+        subjectTemplate: 'Test Subject',
+        extraParams: { key: 'value' },
+        sendAfter: null,
+      };
+
+      const createMock = mockPrismaClient.notification.create as jest.Mock;
+      createMock.mockResolvedValue({ ...mockNotification, id: predefinedId });
+
+      const result = await backend.persistNotification(input);
+
+      expect(mockPrismaClient.notification.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          id: predefinedId,
+          user: { connect: { id: 'user1' } },
+        }),
+        include: {
+          attachments: {
+            include: {
+              attachmentFile: true,
+            },
+          },
+        },
+      });
+      expect(result.id).toBe(predefinedId);
+    });
+
     it('should include gitCommitSha in create payload when provided', async () => {
       const gitCommitSha = 'a'.repeat(40);
       const input = {
