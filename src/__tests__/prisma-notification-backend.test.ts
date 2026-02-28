@@ -2,7 +2,10 @@ import type {
   AnyDatabaseNotification,
   DatabaseNotification,
 } from 'vintasend/dist/types/notification';
-import type { NotificationFilter } from 'vintasend/dist/services/notification-backends/base-notification-backend';
+import type {
+  NotificationFilter,
+  NotificationOrderBy,
+} from 'vintasend/dist/services/notification-backends/base-notification-backend';
 import { PrismaNotificationBackendFactory } from '../index';
 import { NotificationStatusEnum, NotificationTypeEnum } from '../prisma-notification-backend';
 import type {
@@ -1439,6 +1442,33 @@ describe('PrismaNotificationBackend', () => {
           bodyTemplate: 'template-v1',
         },
         skip: 0,
+        take: 10,
+      });
+    });
+
+    it.each([
+      { field: 'sendAfter', direction: 'asc' },
+      { field: 'sendAfter', direction: 'desc' },
+      { field: 'sentAt', direction: 'asc' },
+      { field: 'sentAt', direction: 'desc' },
+      { field: 'readAt', direction: 'asc' },
+      { field: 'readAt', direction: 'desc' },
+      { field: 'createdAt', direction: 'asc' },
+      { field: 'createdAt', direction: 'desc' },
+      { field: 'updatedAt', direction: 'asc' },
+      { field: 'updatedAt', direction: 'desc' },
+    ] as NotificationOrderBy[])('should map orderBy $field $direction into prisma findMany', async (orderBy) => {
+      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      findManyMock.mockResolvedValue([mockNotification]);
+
+      await backend.filterNotifications({}, 1, 10, orderBy);
+
+      expect(findManyMock).toHaveBeenCalledWith({
+        where: {},
+        orderBy: {
+          [orderBy.field]: orderBy.direction,
+        },
+        skip: 10,
         take: 10,
       });
     });

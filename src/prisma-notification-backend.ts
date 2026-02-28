@@ -1,4 +1,8 @@
-import type { BaseNotificationBackend, NotificationFilter } from 'vintasend/dist/services/notification-backends/base-notification-backend';
+import type {
+  BaseNotificationBackend,
+  NotificationFilter,
+  NotificationOrderBy,
+} from 'vintasend/dist/services/notification-backends/base-notification-backend';
 import type { InputJsonValue, JsonValue } from 'vintasend/dist/types/json-values';
 import type {
   DatabaseNotification,
@@ -116,6 +120,14 @@ type PrismaStringFilter = {
   mode?: 'default' | 'insensitive';
 };
 
+type PrismaOrderByField = 'sendAfter' | 'sentAt' | 'readAt' | 'createdAt' | 'updatedAt';
+
+type PrismaOrderDirection = 'asc' | 'desc';
+
+type PrismaOrderBy = {
+  [key in PrismaOrderByField]?: PrismaOrderDirection;
+};
+
 type PrismaNotificationWhereInput<NotificationIdType, UserIdType> = {
   AND?: PrismaNotificationWhereInput<NotificationIdType, UserIdType>[];
   OR?: PrismaNotificationWhereInput<NotificationIdType, UserIdType>[];
@@ -144,6 +156,7 @@ export interface NotificationPrismaClientInterface<NotificationIdType, UserIdTyp
   notification: {
     findMany(args?: {
       where?: PrismaNotificationWhereInput<NotificationIdType, UserIdType>;
+      orderBy?: PrismaOrderBy;
       skip?: number;
       take?: number;
       include?: {
@@ -489,6 +502,12 @@ export class PrismaNotificationBackend<
     }
 
     return where;
+  }
+
+  private convertNotificationOrderByToPrismaOrderBy(orderBy: NotificationOrderBy): PrismaOrderBy {
+    return {
+      [orderBy.field]: orderBy.direction,
+    };
   }
 
   /**
@@ -1503,10 +1522,14 @@ export class PrismaNotificationBackend<
     filter: NotificationFilter<Config>,
     page: number,
     pageSize: number,
+    orderBy?: NotificationOrderBy,
   ): Promise<AnyDatabaseNotification<Config>[]> {
     const where = this.convertNotificationFilterToPrismaWhere(filter);
     const notifications = await this.prismaClient.notification.findMany({
       where,
+      ...(orderBy
+        ? { orderBy: this.convertNotificationOrderByToPrismaOrderBy(orderBy) }
+        : {}),
       skip: page * pageSize,
       take: pageSize,
     });
