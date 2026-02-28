@@ -841,6 +841,72 @@ describe('PrismaNotificationBackend', () => {
     });
   });
 
+  describe('applyReplicationSnapshotIfNewer', () => {
+    it('should skip apply when destination notification is newer', async () => {
+      const destinationNewer = {
+        ...mockNotification,
+        updatedAt: new Date('2026-02-28T12:00:00.000Z'),
+      };
+      const incomingSnapshot = {
+        ...mockNotification,
+        updatedAt: new Date('2026-02-28T11:00:00.000Z'),
+      };
+
+      jest.spyOn(backend, 'getNotification').mockResolvedValue(
+        // biome-ignore lint/suspicious/noExplicitAny: test-only cast
+        destinationNewer as any,
+      );
+      const persistNotificationUpdateSpy = jest
+        .spyOn(backend, 'persistNotificationUpdate')
+        .mockResolvedValue(
+          // biome-ignore lint/suspicious/noExplicitAny: test-only cast
+          destinationNewer as any,
+        );
+
+      const result = await backend.applyReplicationSnapshotIfNewer(
+        // biome-ignore lint/suspicious/noExplicitAny: test-only cast
+        incomingSnapshot as any,
+      );
+
+      expect(result).toEqual({ applied: false });
+      expect(persistNotificationUpdateSpy).not.toHaveBeenCalled();
+    });
+
+    it('should apply update when destination notification is older', async () => {
+      const destinationOlder = {
+        ...mockNotification,
+        updatedAt: new Date('2026-02-28T10:00:00.000Z'),
+      };
+      const incomingSnapshot = {
+        ...mockNotification,
+        title: 'Replicated New Title',
+        updatedAt: new Date('2026-02-28T11:00:00.000Z'),
+      };
+
+      jest.spyOn(backend, 'getNotification').mockResolvedValue(
+        // biome-ignore lint/suspicious/noExplicitAny: test-only cast
+        destinationOlder as any,
+      );
+      const persistNotificationUpdateSpy = jest
+        .spyOn(backend, 'persistNotificationUpdate')
+        .mockResolvedValue(
+          // biome-ignore lint/suspicious/noExplicitAny: test-only cast
+          incomingSnapshot as any,
+        );
+
+      const result = await backend.applyReplicationSnapshotIfNewer(
+        // biome-ignore lint/suspicious/noExplicitAny: test-only cast
+        incomingSnapshot as any,
+      );
+
+      expect(result).toEqual({ applied: true });
+      expect(persistNotificationUpdateSpy).toHaveBeenCalledWith(
+        incomingSnapshot.id,
+        expect.objectContaining({ title: 'Replicated New Title' }),
+      );
+    });
+  });
+
   describe('filterAllInAppUnreadNotifications', () => {
     it('should return all unread notifications for a user', async () => {
       const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;

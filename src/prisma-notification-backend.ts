@@ -338,6 +338,17 @@ export class PrismaNotificationBackend<
 {
   private logger?: BaseLogger;
 
+  private isDuplicateReplicationConflict(error: unknown): boolean {
+    const normalizedError = String(error).toLowerCase();
+
+    return (
+      normalizedError.includes('duplicate') ||
+      normalizedError.includes('unique') ||
+      normalizedError.includes('already exists') ||
+      normalizedError.includes('conflict')
+    );
+  }
+
   constructor(
     private prismaClient: Client,
     private attachmentManager?: BaseAttachmentManager,
@@ -1167,6 +1178,83 @@ export class PrismaNotificationBackend<
     });
 
     return this.serializeRegularNotification(updated);
+  }
+
+  async applyReplicationSnapshotIfNewer(
+    snapshot: AnyDatabaseNotification<Config>,
+  ): Promise<{ applied: boolean }> {
+    const existingNotification = await this.getNotification(snapshot.id, false);
+    const snapshotAsPartialOneOff = snapshot as Partial<
+      Pick<OneOffNotificationInput<Config>, 'emailOrPhone'>
+    > & { userId?: Config['UserIdType'] | null };
+    const isOneOffSnapshot =
+      snapshotAsPartialOneOff.emailOrPhone != null && snapshotAsPartialOneOff.userId == null;
+
+    if (
+      existingNotification?.updatedAt &&
+      snapshot.updatedAt &&
+      existingNotification.updatedAt >= snapshot.updatedAt
+    ) {
+      return { applied: false };
+    }
+
+    if (isOneOffSnapshot) {
+      if (existingNotification) {
+        await this.persistOneOffNotificationUpdate(
+          snapshot.id,
+          snapshot as unknown as Partial<Omit<OneOffNotificationInput<Config>, 'id'>>,
+        );
+
+        return { applied: true };
+      }
+
+      try {
+        await this.persistOneOffNotification(
+          snapshot as unknown as Omit<OneOffNotificationInput<Config>, 'id'> & {
+            id?: Config['NotificationIdType'];
+          },
+        );
+      } catch (createError) {
+        if (!this.isDuplicateReplicationConflict(createError)) {
+          throw createError;
+        }
+
+        await this.persistOneOffNotificationUpdate(
+          snapshot.id,
+          snapshot as unknown as Partial<Omit<OneOffNotificationInput<Config>, 'id'>>,
+        );
+      }
+
+      return { applied: true };
+    }
+
+    if (existingNotification) {
+      await this.persistNotificationUpdate(
+        snapshot.id,
+        snapshot as unknown as Partial<Omit<DatabaseNotification<Config>, 'id'>>,
+      );
+
+      return { applied: true };
+    }
+
+    try {
+      await this.persistNotification(
+        snapshot as unknown as Omit<Notification<Config>, 'id'> & {
+          id?: Config['NotificationIdType'];
+        },
+      );
+    } catch (createError) {
+      if (!this.isDuplicateReplicationConflict(createError)) {
+        throw createError;
+      }
+
+      await this.persistNotificationUpdate(
+        snapshot.id,
+        snapshot as unknown as Partial<Omit<DatabaseNotification<Config>, 'id'>>,
+      );
+    }
+
+    return { applied: true };
   }
 
   /* One-off notification persistence and query methods */
