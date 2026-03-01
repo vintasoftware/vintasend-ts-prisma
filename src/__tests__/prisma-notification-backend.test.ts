@@ -12,6 +12,7 @@ import type {
   NotificationPrismaClientInterface,
   PrismaNotificationBackend,
 } from '../prisma-notification-backend';
+import { vi, type Mock, type Mocked } from 'vitest';
 
 type TestContexts = {
   testContext: {
@@ -20,7 +21,7 @@ type TestContexts = {
 };
 
 describe('PrismaNotificationBackend', () => {
-  let mockPrismaClient: jest.Mocked<NotificationPrismaClientInterface<string, string>>;
+  let mockPrismaClient: Mocked<NotificationPrismaClientInterface<string, string>>;
   let backend: PrismaNotificationBackend<
     // biome-ignore lint/suspicious/noExplicitAny: any just for testing
     typeof mockPrismaClient,
@@ -29,27 +30,27 @@ describe('PrismaNotificationBackend', () => {
 
   beforeEach(() => {
     mockPrismaClient = {
-      $transaction: jest.fn(<R>(fn: (prisma: typeof mockPrismaClient) => Promise<R>) =>
+      $transaction: vi.fn(<R>(fn: (prisma: typeof mockPrismaClient) => Promise<R>) =>
         fn(mockPrismaClient),
       ) as any,
       notification: {
-        findMany: jest.fn(),
-        create: jest.fn(),
-        createManyAndReturn: jest.fn(),
-        update: jest.fn(),
-        findUnique: jest.fn(),
+        findMany: vi.fn(),
+        create: vi.fn(),
+        createManyAndReturn: vi.fn(),
+        update: vi.fn(),
+        findUnique: vi.fn(),
       },
       attachmentFile: {
-        create: jest.fn(),
-        findUnique: jest.fn(),
-        delete: jest.fn(),
-        findMany: jest.fn(),
+        create: vi.fn(),
+        findUnique: vi.fn(),
+        delete: vi.fn(),
+        findMany: vi.fn(),
       },
       notificationAttachment: {
-        create: jest.fn(),
-        findMany: jest.fn(),
-        delete: jest.fn(),
-        deleteMany: jest.fn(),
+        create: vi.fn(),
+        findMany: vi.fn(),
+        delete: vi.fn(),
+        deleteMany: vi.fn(),
       },
     };
 
@@ -82,7 +83,7 @@ describe('PrismaNotificationBackend', () => {
 
   describe('getAllPendingNotifications', () => {
     it('should fetch all pending notifications', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       const result = await backend.getAllPendingNotifications();
@@ -122,7 +123,7 @@ describe('PrismaNotificationBackend', () => {
         sendAfter: null,
       };
 
-      const createMock = mockPrismaClient.notification.create as jest.Mock;
+      const createMock = mockPrismaClient.notification.create as Mock;
       createMock.mockResolvedValue(mockNotification);
 
       const result = await backend.persistNotification(input);
@@ -163,7 +164,7 @@ describe('PrismaNotificationBackend', () => {
         sendAfter: null,
       };
 
-      const createMock = mockPrismaClient.notification.create as jest.Mock;
+      const createMock = mockPrismaClient.notification.create as Mock;
       createMock.mockResolvedValue({ ...mockNotification, id: predefinedId });
 
       const result = await backend.persistNotification(input);
@@ -200,7 +201,7 @@ describe('PrismaNotificationBackend', () => {
         gitCommitSha,
       };
 
-      const createMock = mockPrismaClient.notification.create as jest.Mock;
+      const createMock = mockPrismaClient.notification.create as Mock;
       createMock.mockResolvedValue({
         ...mockNotification,
         gitCommitSha,
@@ -233,7 +234,7 @@ describe('PrismaNotificationBackend', () => {
         sentAt: new Date(),
       };
 
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
 
       updateMock.mockResolvedValue(sentNotification);
 
@@ -262,7 +263,7 @@ describe('PrismaNotificationBackend', () => {
         sentAt: new Date(),
       };
 
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
 
       updateMock.mockResolvedValue(sentNotification);
 
@@ -308,7 +309,7 @@ describe('PrismaNotificationBackend', () => {
         updatedAt: now,
       };
 
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockResolvedValue(oneOffNotification);
 
       // biome-ignore lint/suspicious/noExplicitAny: tests cover widened notification shape
@@ -339,10 +340,10 @@ describe('PrismaNotificationBackend', () => {
       };
 
       // Mock findUnique to return a regular notification with userId
-      const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+      const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
       findUniqueMock.mockResolvedValue(mockNotification);
 
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockResolvedValue(readNotification);
 
       const result = await backend.markAsRead('1');
@@ -372,10 +373,10 @@ describe('PrismaNotificationBackend', () => {
       };
 
       // Mock findUnique to return a regular notification with userId
-      const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+      const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
       findUniqueMock.mockResolvedValue(mockNotification);
 
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockResolvedValue(readNotification);
 
       const result = await backend.markAsRead('1', false);
@@ -403,7 +404,7 @@ describe('PrismaNotificationBackend', () => {
         emailOrPhone: 'test@example.com',
       };
 
-      const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+      const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
       findUniqueMock.mockResolvedValue(oneOffNotification);
 
       await expect(backend.markAsRead('1')).rejects.toThrow(
@@ -418,7 +419,7 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should throw error when trying to mark a non-existent notification as read', async () => {
-      const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+      const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
       findUniqueMock.mockResolvedValue(null);
 
       await expect(backend.markAsRead('non-existent-id')).rejects.toThrow('Notification not found');
@@ -433,7 +434,7 @@ describe('PrismaNotificationBackend', () => {
 
   describe('filterInAppUnreadNotifications', () => {
     it('should return unread notifications with pagination', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       const result = await backend.filterInAppUnreadNotifications('user1', 0, 10);
@@ -460,7 +461,7 @@ describe('PrismaNotificationBackend', () => {
         },
       };
 
-      const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+      const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
       findUniqueMock.mockResolvedValue(notificationWithUser);
 
       const result = await backend.getUserEmailFromNotification('1');
@@ -475,7 +476,7 @@ describe('PrismaNotificationBackend', () => {
 
   describe('getPendingNotifications', () => {
     it('should fetch pending notifications with no sendAfter date', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       const result = await backend.getPendingNotifications();
@@ -501,7 +502,7 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should fetch pending notifications with custom pagination', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       const result = await backend.getPendingNotifications(2, 50);
@@ -525,7 +526,7 @@ describe('PrismaNotificationBackend', () => {
 
   describe('getAllFutureNotifications', () => {
     it('should fetch future notifications', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       const result = await backend.getAllFutureNotifications();
@@ -552,7 +553,7 @@ describe('PrismaNotificationBackend', () => {
         sentAt: new Date(),
       };
 
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockResolvedValue(failedNotification);
 
       const result = await backend.markAsFailed('1');
@@ -578,7 +579,7 @@ describe('PrismaNotificationBackend', () => {
         sentAt: new Date(),
       };
 
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockResolvedValue(failedNotification);
 
       const result = await backend.markAsFailed('1', false);
@@ -622,7 +623,7 @@ describe('PrismaNotificationBackend', () => {
         updatedAt: now,
       };
 
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockResolvedValue(oneOffNotification);
 
       // biome-ignore lint/suspicious/noExplicitAny: tests cover widened notification shape
@@ -646,7 +647,7 @@ describe('PrismaNotificationBackend', () => {
 
   describe('cancelNotification', () => {
     it('should cancel a notification', async () => {
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockResolvedValue({
         ...mockNotification,
         status: NotificationStatusEnum.CANCELLED,
@@ -665,7 +666,7 @@ describe('PrismaNotificationBackend', () => {
 
   describe('getNotification', () => {
     it('should get a notification by id', async () => {
-      const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+      const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
       findUniqueMock.mockResolvedValue(mockNotification);
 
       const result = await backend.getNotification('1', false);
@@ -687,7 +688,7 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should return null when notification not found', async () => {
-      const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+      const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
       findUniqueMock.mockResolvedValue(null);
 
       const result = await backend.getNotification('1', false);
@@ -699,7 +700,7 @@ describe('PrismaNotificationBackend', () => {
   describe('storeAdapterAndContextUsed', () => {
     it('should store the context and adapter used for a notification', async () => {
       const context = { value1: 'test' };
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockResolvedValue({ ...mockNotification, contextUsed: context });
 
       await backend.storeAdapterAndContextUsed('1', 'test-adapter', context);
@@ -715,7 +716,7 @@ describe('PrismaNotificationBackend', () => {
 
     it('should handle rejected update', async () => {
       const context = { value1: 'test' };
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockRejectedValue(new Error('Update failed'));
 
       await expect(backend.storeAdapterAndContextUsed('1', 'test-adapter', context)).rejects.toThrow(
@@ -734,7 +735,7 @@ describe('PrismaNotificationBackend', () => {
 
   describe('getAllFutureNotificationsFromUser', () => {
     it('should fetch future notifications for a specific user', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       const result = await backend.getAllFutureNotificationsFromUser('user1');
@@ -755,7 +756,7 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should return empty array when no notifications found', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([]);
 
       const result = await backend.getAllFutureNotificationsFromUser('user1');
@@ -766,7 +767,7 @@ describe('PrismaNotificationBackend', () => {
 
   describe('getFutureNotificationsFromUser', () => {
     it('should fetch future notifications for a specific user', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       const result = await backend.getFutureNotificationsFromUser('user1', 0, 10);
@@ -801,7 +802,7 @@ describe('PrismaNotificationBackend', () => {
         ...updateData,
       };
 
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockResolvedValue(updatedNotification);
 
       const result = await backend.persistNotificationUpdate('1', updateData);
@@ -826,7 +827,7 @@ describe('PrismaNotificationBackend', () => {
         ...updateData,
       };
 
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockResolvedValue(updatedNotification);
 
       const result = await backend.persistNotificationUpdate('1', updateData);
@@ -852,11 +853,11 @@ describe('PrismaNotificationBackend', () => {
         updatedAt: new Date('2026-02-28T11:00:00.000Z'),
       };
 
-      jest.spyOn(backend, 'getNotification').mockResolvedValue(
+      vi.spyOn(backend, 'getNotification').mockResolvedValue(
         // biome-ignore lint/suspicious/noExplicitAny: test-only cast
         destinationNewer as any,
       );
-      const persistNotificationUpdateSpy = jest
+      const persistNotificationUpdateSpy = vi
         .spyOn(backend, 'persistNotificationUpdate')
         .mockResolvedValue(
           // biome-ignore lint/suspicious/noExplicitAny: test-only cast
@@ -883,11 +884,11 @@ describe('PrismaNotificationBackend', () => {
         updatedAt: new Date('2026-02-28T11:00:00.000Z'),
       };
 
-      jest.spyOn(backend, 'getNotification').mockResolvedValue(
+      vi.spyOn(backend, 'getNotification').mockResolvedValue(
         // biome-ignore lint/suspicious/noExplicitAny: test-only cast
         destinationOlder as any,
       );
-      const persistNotificationUpdateSpy = jest
+      const persistNotificationUpdateSpy = vi
         .spyOn(backend, 'persistNotificationUpdate')
         .mockResolvedValue(
           // biome-ignore lint/suspicious/noExplicitAny: test-only cast
@@ -909,7 +910,7 @@ describe('PrismaNotificationBackend', () => {
 
   describe('filterAllInAppUnreadNotifications', () => {
     it('should return all unread notifications for a user', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       const result = await backend.filterAllInAppUnreadNotifications('user1');
@@ -925,7 +926,7 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should return empty array when no unread notifications exist', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([]);
 
       const result = await backend.filterAllInAppUnreadNotifications('user1');
@@ -941,7 +942,7 @@ describe('PrismaNotificationBackend', () => {
         extraParams: ['invalid array'] as unknown as Record<string, string>,
       };
 
-      const createMock = mockPrismaClient.notification.create as jest.Mock;
+      const createMock = mockPrismaClient.notification.create as Mock;
       createMock.mockResolvedValue(invalidInput);
 
       // @ts-ignore - testing invalid input
@@ -1113,7 +1114,7 @@ describe('PrismaNotificationBackend', () => {
 
   describe('error handling', () => {
     it('should handle database errors in getAllPendingNotifications', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockRejectedValue(new Error('Database error'));
 
       await expect(backend.getAllPendingNotifications()).rejects.toThrow('Database error');
@@ -1125,7 +1126,7 @@ describe('PrismaNotificationBackend', () => {
         extraParams: [] as unknown as Record<string, string>, // Invalid extra params
       };
 
-      const createMock = mockPrismaClient.notification.create as jest.Mock;
+      const createMock = mockPrismaClient.notification.create as Mock;
       createMock.mockResolvedValue(invalidInput);
 
       // @ts-ignore - testing invalid input
@@ -1134,7 +1135,7 @@ describe('PrismaNotificationBackend', () => {
 
     it('should handle missing user email in getUserEmailFromNotification', async () => {
       const notificationWithoutUser = { ...mockNotification, user: undefined };
-      const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+      const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
       findUniqueMock.mockResolvedValue(notificationWithoutUser);
 
       const result = await backend.getUserEmailFromNotification('1');
@@ -1151,7 +1152,7 @@ describe('PrismaNotificationBackend', () => {
         status: NotificationStatusEnum.PENDING_SEND,
       };
 
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([futureNotification]);
 
       const result = await backend.getFutureNotifications();
@@ -1174,7 +1175,7 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should fetch future notifications with custom pagination', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       const result = await backend.getFutureNotifications(3, 25);
@@ -1195,7 +1196,7 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should return empty array when no future notifications exist', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([]);
 
       const result = await backend.getFutureNotifications();
@@ -1218,7 +1219,7 @@ describe('PrismaNotificationBackend', () => {
 
   describe('filterNotifications', () => {
     it('should filter notifications with simple field filters and pagination', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       const filter: NotificationFilter<any> = {
@@ -1246,7 +1247,7 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should convert nested logical filters to prisma where clause', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       const createdFrom = new Date('2024-01-01T00:00:00.000Z');
@@ -1372,7 +1373,7 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should map startsWith lookup to prisma startsWith filter', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       await backend.filterNotifications(
@@ -1396,7 +1397,7 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should map endsWith lookup to prisma endsWith filter', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       await backend.filterNotifications(
@@ -1420,7 +1421,7 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should map includes lookup to prisma contains filter', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       await backend.filterNotifications(
@@ -1444,7 +1445,7 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should map exact lookup to prisma equals filter', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       await backend.filterNotifications(
@@ -1468,7 +1469,7 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should map caseInsensitive lookup to prisma mode insensitive', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       await backend.filterNotifications(
@@ -1492,7 +1493,7 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should keep backward compatibility for plain string filters', async () => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       await backend.filterNotifications(
@@ -1524,7 +1525,7 @@ describe('PrismaNotificationBackend', () => {
       { field: 'updatedAt', direction: 'asc' },
       { field: 'updatedAt', direction: 'desc' },
     ] as NotificationOrderBy[])('should map orderBy $field $direction into prisma findMany', async (orderBy) => {
-      const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+      const findManyMock = mockPrismaClient.notification.findMany as Mock;
       findManyMock.mockResolvedValue([mockNotification]);
 
       await backend.filterNotifications({}, 1, 10, orderBy);
@@ -1551,7 +1552,7 @@ describe('PrismaNotificationBackend', () => {
         gitCommitSha: updateData.gitCommitSha,
       };
 
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockResolvedValue(updatedNotification);
 
       await backend.persistNotificationUpdate('1', updateData);
@@ -1575,7 +1576,7 @@ describe('PrismaNotificationBackend', () => {
         title: 'Updated Title',
       };
 
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockResolvedValue(updatedNotification);
 
       const result = await backend.persistNotificationUpdate('1', updateData);
@@ -1602,7 +1603,7 @@ describe('PrismaNotificationBackend', () => {
         ...updateData,
       };
 
-      const updateMock = mockPrismaClient.notification.update as jest.Mock;
+      const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockResolvedValue(updatedNotification);
 
       const result = await backend.persistNotificationUpdate('1', updateData);
@@ -1669,7 +1670,7 @@ describe('PrismaNotificationBackend', () => {
         },
       ];
 
-      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as jest.Mock;
+      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as Mock;
       createManyAndReturnMock.mockResolvedValue([{ id: 'id1' }, { id: 'id2' }]);
 
       const result = await backend.bulkPersistNotifications(notifications);
@@ -1719,7 +1720,7 @@ describe('PrismaNotificationBackend', () => {
         },
       ];
 
-      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as jest.Mock;
+      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as Mock;
       createManyAndReturnMock.mockResolvedValue([{ id: 'id3' }, { id: 'id4' }]);
 
       const result = await backend.bulkPersistNotifications(notifications);
@@ -1761,7 +1762,7 @@ describe('PrismaNotificationBackend', () => {
         },
       ];
 
-      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as jest.Mock;
+      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as Mock;
       createManyAndReturnMock.mockResolvedValue([{ id: 'id-both' }]);
 
       const result = await backend.bulkPersistNotifications(notifications);
@@ -1777,7 +1778,7 @@ describe('PrismaNotificationBackend', () => {
       });
 
       // Should not include one-off fields when userId is present
-      const callData = (mockPrismaClient.notification.createManyAndReturn as jest.Mock).mock.calls[0][0]
+      const callData = (mockPrismaClient.notification.createManyAndReturn as Mock).mock.calls[0][0]
         .data[0];
       expect(callData).not.toHaveProperty('emailOrPhone');
       expect(callData).not.toHaveProperty('firstName');
@@ -1815,7 +1816,7 @@ describe('PrismaNotificationBackend', () => {
         },
       ];
 
-      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as jest.Mock;
+      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as Mock;
       createManyAndReturnMock.mockResolvedValue([{ id: 'id5' }, { id: 'id6' }]);
 
       const result = await backend.bulkPersistNotifications(notifications);
@@ -1865,7 +1866,7 @@ describe('PrismaNotificationBackend', () => {
         },
       ];
 
-      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as jest.Mock;
+      const createManyAndReturnMock = mockPrismaClient.notification.createManyAndReturn as Mock;
       createManyAndReturnMock.mockResolvedValue([{ id: 'id1' }, { id: 'id2' }]);
 
       const result = await backend.bulkPersistNotifications(notifications);
@@ -1928,7 +1929,7 @@ describe('PrismaNotificationBackend', () => {
           updatedAt: new Date(),
         };
 
-        const createMock = mockPrismaClient.notification.create as jest.Mock;
+        const createMock = mockPrismaClient.notification.create as Mock;
         createMock.mockResolvedValue(oneOffNotification);
 
         const result = await backend.persistOneOffNotification(input);
@@ -2000,7 +2001,7 @@ describe('PrismaNotificationBackend', () => {
           updatedAt: new Date(),
         };
 
-        const createMock = mockPrismaClient.notification.create as jest.Mock;
+        const createMock = mockPrismaClient.notification.create as Mock;
         createMock.mockResolvedValue(oneOffNotification);
 
         // biome-ignore lint/suspicious/noExplicitAny: testing backend mapper behavior with persisted field
@@ -2052,7 +2053,7 @@ describe('PrismaNotificationBackend', () => {
           updatedAt: new Date(),
         };
 
-        const updateMock = mockPrismaClient.notification.update as jest.Mock;
+        const updateMock = mockPrismaClient.notification.update as Mock;
         updateMock.mockResolvedValue(updatedNotification);
 
         const result = await backend.persistOneOffNotificationUpdate('1', updateData);
@@ -2099,7 +2100,7 @@ describe('PrismaNotificationBackend', () => {
           updatedAt: new Date(),
         };
 
-        const updateMock = mockPrismaClient.notification.update as jest.Mock;
+        const updateMock = mockPrismaClient.notification.update as Mock;
         updateMock.mockResolvedValue(updatedNotification);
 
         const result = await backend.persistOneOffNotificationUpdate('1', updateData);
@@ -2141,7 +2142,7 @@ describe('PrismaNotificationBackend', () => {
           updatedAt: new Date(),
         };
 
-        const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+        const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
         findUniqueMock.mockResolvedValue(oneOffNotification);
 
         const result = await backend.getOneOffNotification('1', false);
@@ -2158,7 +2159,7 @@ describe('PrismaNotificationBackend', () => {
       });
 
       it('should return null for regular notification (has userId)', async () => {
-        const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+        const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
         findUniqueMock.mockResolvedValue(mockNotification);
 
         const result = await backend.getOneOffNotification('1', false);
@@ -2167,7 +2168,7 @@ describe('PrismaNotificationBackend', () => {
       });
 
       it('should return null when notification not found', async () => {
-        const findUniqueMock = mockPrismaClient.notification.findUnique as jest.Mock;
+        const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
         findUniqueMock.mockResolvedValue(null);
 
         const result = await backend.getOneOffNotification('1', false);
@@ -2201,7 +2202,7 @@ describe('PrismaNotificationBackend', () => {
           updatedAt: new Date(),
         };
 
-        const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+        const findManyMock = mockPrismaClient.notification.findMany as Mock;
         findManyMock.mockResolvedValue([oneOffNotification]);
 
         const result = await backend.getAllOneOffNotifications();
@@ -2244,7 +2245,7 @@ describe('PrismaNotificationBackend', () => {
           updatedAt: new Date(),
         };
 
-        const findManyMock = mockPrismaClient.notification.findMany as jest.Mock;
+        const findManyMock = mockPrismaClient.notification.findMany as Mock;
         findManyMock.mockResolvedValue([oneOffNotification]);
 
         const result = await backend.getOneOffNotifications(0, 10);
