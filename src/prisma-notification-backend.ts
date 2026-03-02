@@ -1,31 +1,26 @@
 import type {
-  BaseNotificationBackend,
-  NotificationFilter,
-  NotificationOrderBy,
-} from 'vintasend/dist/services/notification-backends/base-notification-backend';
-import type { InputJsonValue, JsonValue } from 'vintasend/dist/types/json-values';
-import type {
-  DatabaseNotification,
-  Notification,
-} from 'vintasend/dist/types/notification';
-import type {
   AnyDatabaseNotification,
   AnyNotification,
-  DatabaseOneOffNotification,
-  OneOffNotificationInput,
-} from 'vintasend/dist/types/notification';
-import type { NotificationStatus } from 'vintasend/dist/types/notification-status';
-import type { NotificationType } from 'vintasend/dist/types/notification-type';
-import type { BaseNotificationTypeConfig } from 'vintasend/dist/types/notification-type-config';
-import type {
   AttachmentFileRecord,
-  StoredAttachment,
+  BaseAttachmentManager,
+  BaseLogger,
+  BaseNotificationBackend,
+  BaseNotificationTypeConfig,
+  DatabaseNotification,
+  DatabaseOneOffNotification,
+  InputJsonValue,
+  JsonValue,
+  Notification,
   NotificationAttachment,
+  NotificationFilter,
+  NotificationOrderBy,
+  NotificationStatus,
+  NotificationType,
+  OneOffNotificationInput,
   StorageIdentifiers,
-} from 'vintasend/dist/types/attachment';
-import { isAttachmentReference } from 'vintasend/dist/types/attachment';
-import type { BaseAttachmentManager } from 'vintasend/dist/services/attachment-manager/base-attachment-manager';
-import type { BaseLogger } from 'vintasend/dist/services/loggers/base-logger';
+  StoredAttachment,
+} from 'vintasend';
+import { isAttachmentReference } from 'vintasend';
 
 export const NotificationStatusEnum = {
   PENDING_SEND: 'PENDING_SEND',
@@ -204,9 +199,7 @@ export interface NotificationPrismaClientInterface<NotificationIdType, UserIdTyp
         storageIdentifiers: InputJsonValue;
       };
     }): Promise<PrismaAttachmentFileModel>;
-    delete(args: {
-      where: { id: string };
-    }): Promise<PrismaAttachmentFileModel>;
+    delete(args: { where: { id: string } }): Promise<PrismaAttachmentFileModel>;
     findMany(args?: {
       where?: {
         notificationAttachments?: { none: object };
@@ -221,9 +214,7 @@ export interface NotificationPrismaClientInterface<NotificationIdType, UserIdTyp
       };
       include?: { attachmentFile: boolean };
     }): Promise<PrismaNotificationAttachmentModel[]>;
-    delete(args: {
-      where: { id: string };
-    }): Promise<PrismaNotificationAttachmentModel>;
+    delete(args: { where: { id: string } }): Promise<PrismaNotificationAttachmentModel>;
     deleteMany(args: {
       where: {
         id: string;
@@ -262,7 +253,7 @@ type AtLeast<O extends object, K extends string> = NoExpand<
     : never
 >;
 
-export interface BaseNotificationCreateInput<UserIdType, NotificationIdType = unknown> {
+export interface BaseNotificationCreateInput<_UserIdType, NotificationIdType = unknown> {
   id?: NotificationIdType;
   // Common fields
   notificationType: NotificationType;
@@ -285,11 +276,10 @@ export interface BaseNotificationCreateInput<UserIdType, NotificationIdType = un
 }
 
 // Prisma-compatible type for creating notifications
-export type PrismaNotificationCreateData<UserIdType> =
-  BaseNotificationCreateInput<UserIdType> & {
-    userId?: UserIdType | null;
-    user?: { connect: { id: UserIdType } };
-  };
+export type PrismaNotificationCreateData<UserIdType> = BaseNotificationCreateInput<UserIdType> & {
+  userId?: UserIdType | null;
+  user?: { connect: { id: UserIdType } };
+};
 
 export interface BaseNotificationUpdateInput<UserIdType> {
   user?: {
@@ -436,10 +426,8 @@ export class PrismaNotificationBackend<
       };
     }
 
-    const where: PrismaNotificationWhereInput<
-      Config['NotificationIdType'],
-      Config['UserIdType']
-    > = {};
+    const where: PrismaNotificationWhereInput<Config['NotificationIdType'], Config['UserIdType']> =
+      {};
 
     if (filter.status !== undefined) {
       where.status = Array.isArray(filter.status) ? { in: filter.status } : filter.status;
@@ -643,10 +631,7 @@ export class PrismaNotificationBackend<
     // When both are provided, userId takes precedence (regular notification)
     const isOneOff = !hasUserId && hasEmailOrPhone;
 
-    const base: BaseNotificationCreateInput<
-      Config['UserIdType'],
-      Config['NotificationIdType']
-    > = {
+    const base: BaseNotificationCreateInput<Config['UserIdType'], Config['NotificationIdType']> = {
       id: notification.id,
       notificationType: notification.notificationType,
       title: notification.title,
@@ -936,9 +921,9 @@ export class PrismaNotificationBackend<
    */
   private async createNotificationWithAttachments<TInput, TSerialized>(
     input: TInput & { attachments?: NotificationAttachment[] },
-    buildData: (notification: Omit<TInput, 'attachments'>) => PrismaNotificationCreateData<
-      Config['UserIdType']
-    >,
+    buildData: (
+      notification: Omit<TInput, 'attachments'>,
+    ) => PrismaNotificationCreateData<Config['UserIdType']>,
     serialize: (
       db: PrismaNotificationModel<Config['NotificationIdType'], Config['UserIdType']>,
     ) => TSerialized,
@@ -979,7 +964,9 @@ export class PrismaNotificationBackend<
         throw new Error('Failed to retrieve notification after creating attachments');
       }
 
-      this.logger?.info(`Notification created successfully with ID: ${created.id} and ${attachments.length} attachment(s)`);
+      this.logger?.info(
+        `Notification created successfully with ID: ${created.id} and ${attachments.length} attachment(s)`,
+      );
       return serialize(withAttachments);
     });
   }
@@ -1004,9 +991,9 @@ export class PrismaNotificationBackend<
   deserializeNotificationForUpdate(
     notification: Partial<Notification<Config>>,
   ): Partial<Parameters<typeof this.prismaClient.notification.update>[0]['data']> {
-    const notificationWithOptionalGitCommitSha = notification as Partial<
-      Notification<Config>
-    > & { gitCommitSha?: string | null };
+    const notificationWithOptionalGitCommitSha = notification as Partial<Notification<Config>> & {
+      gitCommitSha?: string | null;
+    };
 
     return {
       ...(notification.userId ? { user: { connect: { id: notification.userId } } } : {}),
@@ -1054,7 +1041,7 @@ export class PrismaNotificationBackend<
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         status: NotificationStatusEnum.PENDING_SEND,
-        sendAfter: { or: [{ lte: new Date() }, { equals: null }], },
+        sendAfter: { or: [{ lte: new Date() }, { equals: null }] },
       },
       skip: page * pageSize,
       take: pageSize,
@@ -1575,9 +1562,7 @@ export class PrismaNotificationBackend<
     return orphanedFiles.map((file) => this.serializeAttachmentFileRecord(file));
   }
 
-  async getAttachments(
-    notificationId: Config['NotificationIdType'],
-  ): Promise<StoredAttachment[]> {
+  async getAttachments(notificationId: Config['NotificationIdType']): Promise<StoredAttachment[]> {
     const attachments = await this.prismaClient.notificationAttachment.findMany({
       where: { notificationId },
       include: { attachmentFile: true },
@@ -1600,9 +1585,7 @@ export class PrismaNotificationBackend<
     });
 
     if (result.count === 0) {
-      throw new Error(
-        `Attachment ${attachmentId} not found for notification ${notificationId}`,
-      );
+      throw new Error(`Attachment ${attachmentId} not found for notification ${notificationId}`);
     }
   }
 
@@ -1615,9 +1598,7 @@ export class PrismaNotificationBackend<
     const where = this.convertNotificationFilterToPrismaWhere(filter);
     const notifications = await this.prismaClient.notification.findMany({
       where,
-      ...(orderBy
-        ? { orderBy: this.convertNotificationOrderByToPrismaOrderBy(orderBy) }
-        : {}),
+      ...(orderBy ? { orderBy: this.convertNotificationOrderByToPrismaOrderBy(orderBy) } : {}),
       skip: page * pageSize,
       take: pageSize,
     });
@@ -1642,7 +1623,9 @@ export class PrismaNotificationBackend<
     for (const att of attachments) {
       if (isAttachmentReference(att)) {
         // Reference existing file - just create the notification link
-        this.logger?.info(`Linking existing attachment file ${att.fileId} to notification ${notificationId}`);
+        this.logger?.info(
+          `Linking existing attachment file ${att.fileId} to notification ${notificationId}`,
+        );
         const fileRecord = await this.getAttachmentFileInTransaction(tx, att.fileId);
         if (!fileRecord) {
           throw new Error(`Referenced file ${att.fileId} not found`);
@@ -1722,6 +1705,10 @@ export class PrismaNotificationBackendFactory<Config extends BaseNotificationTyp
       Config['UserIdType']
     >,
   >(prismaClient: Client, attachmentManager?: BaseAttachmentManager, identifier?: string) {
-    return new PrismaNotificationBackend<Client, Config>(prismaClient, attachmentManager, identifier);
+    return new PrismaNotificationBackend<Client, Config>(
+      prismaClient,
+      attachmentManager,
+      identifier,
+    );
   }
 }

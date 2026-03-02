@@ -1,11 +1,14 @@
 {
   "name": "vintasend-prisma",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "VintaSend Backend implementation for Prisma",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
     "prepublishOnly": "npm run build",
+    "prepare": "husky",
+    "lint": "biome check .",
+    "format": "biome check --write .",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
@@ -18,10 +21,12 @@
   "dependencies": {
     "@prisma/client": "^7.4.2",
     "prisma": "^7.4.2",
-    "vintasend": "^0.10.0"
+    "vintasend": "^0.11.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.5",
     "@vitest/coverage-v8": "4.0.18",
+    "husky": "^9.1.7",
     "typescript": "^5.9.3",
     "vitest": "4.0.18"
   }

@@ -1,18 +1,16 @@
 import type {
   AnyDatabaseNotification,
   DatabaseNotification,
-} from 'vintasend/dist/types/notification';
-import type {
   NotificationFilter,
   NotificationOrderBy,
-} from 'vintasend/dist/services/notification-backends/base-notification-backend';
+} from 'vintasend';
+import { type Mock, type Mocked, vi } from 'vitest';
 import { PrismaNotificationBackendFactory } from '../index';
-import { NotificationStatusEnum, NotificationTypeEnum } from '../prisma-notification-backend';
 import type {
   NotificationPrismaClientInterface,
   PrismaNotificationBackend,
 } from '../prisma-notification-backend';
-import { vi, type Mock, type Mocked } from 'vitest';
+import { NotificationStatusEnum, NotificationTypeEnum } from '../prisma-notification-backend';
 
 type TestContexts = {
   testContext: {
@@ -22,11 +20,7 @@ type TestContexts = {
 
 describe('PrismaNotificationBackend', () => {
   let mockPrismaClient: Mocked<NotificationPrismaClientInterface<string, string>>;
-  let backend: PrismaNotificationBackend<
-    // biome-ignore lint/suspicious/noExplicitAny: any just for testing
-    typeof mockPrismaClient,
-    any
-  >;
+  let backend: PrismaNotificationBackend<typeof mockPrismaClient, any>;
 
   beforeEach(() => {
     mockPrismaClient = {
@@ -92,10 +86,7 @@ describe('PrismaNotificationBackend', () => {
         where: {
           status: NotificationStatusEnum.PENDING_SEND,
           sendAfter: {
-            or: [
-              { lte: expect.any(Date) },
-              { equals: null },
-            ],
+            or: [{ lte: expect.any(Date) }, { equals: null }],
           },
         },
       });
@@ -207,7 +198,6 @@ describe('PrismaNotificationBackend', () => {
         gitCommitSha,
       });
 
-      // biome-ignore lint/suspicious/noExplicitAny: testing backend mapper behavior with persisted field
       await backend.persistNotification(input as any);
 
       expect(mockPrismaClient.notification.create).toHaveBeenCalledWith({
@@ -227,7 +217,6 @@ describe('PrismaNotificationBackend', () => {
 
   describe('markAsSent', () => {
     it('should mark a notification as sent', async () => {
-      // biome-ignore lint/suspicious/noExplicitAny: any just for testing
       const sentNotification: DatabaseNotification<any> = {
         ...mockNotification,
         status: NotificationStatusEnum.SENT,
@@ -238,7 +227,6 @@ describe('PrismaNotificationBackend', () => {
 
       updateMock.mockResolvedValue(sentNotification);
 
-      // biome-ignore lint/suspicious/noExplicitAny: any just for testing
       const result: AnyDatabaseNotification<any> = await backend.markAsSent('1');
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
@@ -256,7 +244,6 @@ describe('PrismaNotificationBackend', () => {
     });
 
     it('should skip pending send status chack if checkIsPending is false', async () => {
-      // biome-ignore lint/suspicious/noExplicitAny: any just for testing
       const sentNotification: DatabaseNotification<any> = {
         ...mockNotification,
         status: NotificationStatusEnum.SENT,
@@ -267,7 +254,6 @@ describe('PrismaNotificationBackend', () => {
 
       updateMock.mockResolvedValue(sentNotification);
 
-      // biome-ignore lint/suspicious/noExplicitAny: any just for testing
       const result: AnyDatabaseNotification<any> = await backend.markAsSent('1', false);
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
@@ -312,7 +298,6 @@ describe('PrismaNotificationBackend', () => {
       const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockResolvedValue(oneOffNotification);
 
-      // biome-ignore lint/suspicious/noExplicitAny: tests cover widened notification shape
       const result: AnyDatabaseNotification<any> = await backend.markAsSent('one-off-1');
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
@@ -485,10 +470,7 @@ describe('PrismaNotificationBackend', () => {
         where: {
           status: NotificationStatusEnum.PENDING_SEND,
           sendAfter: {
-            or: [
-              { lte: expect.any(Date) },
-              { equals: null },
-            ],
+            or: [{ lte: expect.any(Date) }, { equals: null }],
           },
         },
         skip: 0,
@@ -511,10 +493,7 @@ describe('PrismaNotificationBackend', () => {
         where: {
           status: NotificationStatusEnum.PENDING_SEND,
           sendAfter: {
-            or: [
-              { lte: expect.any(Date) },
-              { equals: null },
-            ],
+            or: [{ lte: expect.any(Date) }, { equals: null }],
           },
         },
         skip: 100,
@@ -626,7 +605,6 @@ describe('PrismaNotificationBackend', () => {
       const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockResolvedValue(oneOffNotification);
 
-      // biome-ignore lint/suspicious/noExplicitAny: tests cover widened notification shape
       const result: AnyDatabaseNotification<any> = await backend.markAsFailed('one-off-2');
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
@@ -719,9 +697,9 @@ describe('PrismaNotificationBackend', () => {
       const updateMock = mockPrismaClient.notification.update as Mock;
       updateMock.mockRejectedValue(new Error('Update failed'));
 
-      await expect(backend.storeAdapterAndContextUsed('1', 'test-adapter', context)).rejects.toThrow(
-        'Update failed',
-      );
+      await expect(
+        backend.storeAdapterAndContextUsed('1', 'test-adapter', context),
+      ).rejects.toThrow('Update failed');
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
         where: { id: '1' },
@@ -853,21 +831,12 @@ describe('PrismaNotificationBackend', () => {
         updatedAt: new Date('2026-02-28T11:00:00.000Z'),
       };
 
-      vi.spyOn(backend, 'getNotification').mockResolvedValue(
-        // biome-ignore lint/suspicious/noExplicitAny: test-only cast
-        destinationNewer as any,
-      );
+      vi.spyOn(backend, 'getNotification').mockResolvedValue(destinationNewer as any);
       const persistNotificationUpdateSpy = vi
         .spyOn(backend, 'persistNotificationUpdate')
-        .mockResolvedValue(
-          // biome-ignore lint/suspicious/noExplicitAny: test-only cast
-          destinationNewer as any,
-        );
+        .mockResolvedValue(destinationNewer as any);
 
-      const result = await backend.applyReplicationSnapshotIfNewer(
-        // biome-ignore lint/suspicious/noExplicitAny: test-only cast
-        incomingSnapshot as any,
-      );
+      const result = await backend.applyReplicationSnapshotIfNewer(incomingSnapshot as any);
 
       expect(result).toEqual({ applied: false });
       expect(persistNotificationUpdateSpy).not.toHaveBeenCalled();
@@ -884,21 +853,12 @@ describe('PrismaNotificationBackend', () => {
         updatedAt: new Date('2026-02-28T11:00:00.000Z'),
       };
 
-      vi.spyOn(backend, 'getNotification').mockResolvedValue(
-        // biome-ignore lint/suspicious/noExplicitAny: test-only cast
-        destinationOlder as any,
-      );
+      vi.spyOn(backend, 'getNotification').mockResolvedValue(destinationOlder as any);
       const persistNotificationUpdateSpy = vi
         .spyOn(backend, 'persistNotificationUpdate')
-        .mockResolvedValue(
-          // biome-ignore lint/suspicious/noExplicitAny: test-only cast
-          incomingSnapshot as any,
-        );
+        .mockResolvedValue(incomingSnapshot as any);
 
-      const result = await backend.applyReplicationSnapshotIfNewer(
-        // biome-ignore lint/suspicious/noExplicitAny: test-only cast
-        incomingSnapshot as any,
-      );
+      const result = await backend.applyReplicationSnapshotIfNewer(incomingSnapshot as any);
 
       expect(result).toEqual({ applied: true });
       expect(persistNotificationUpdateSpy).toHaveBeenCalledWith(
@@ -945,7 +905,7 @@ describe('PrismaNotificationBackend', () => {
       const createMock = mockPrismaClient.notification.create as Mock;
       createMock.mockResolvedValue(invalidInput);
 
-      // @ts-ignore - testing invalid input
+      // @ts-expect-error - testing invalid input
       await expect(backend.persistNotification(invalidInput)).rejects.toThrow('Invalid JSON value');
     });
   });
@@ -1107,7 +1067,6 @@ describe('PrismaNotificationBackend', () => {
       });
       // Verify the type casting worked by checking if it matches TestContexts type
       expect(result.contextName).toBe('testContext');
-      // biome-ignore lint/suspicious/noExplicitAny: any just for testing
       expect(typeof (result.contextParameters as any).param1).toBe('string');
     });
   });
@@ -1129,7 +1088,7 @@ describe('PrismaNotificationBackend', () => {
       const createMock = mockPrismaClient.notification.create as Mock;
       createMock.mockResolvedValue(invalidInput);
 
-      // @ts-ignore - testing invalid input
+      // @ts-expect-error - testing invalid input
       await expect(backend.persistNotification(invalidInput)).rejects.toThrow('Invalid JSON value');
     });
 
@@ -1377,9 +1336,9 @@ describe('PrismaNotificationBackend', () => {
       findManyMock.mockResolvedValue([mockNotification]);
 
       await backend.filterNotifications(
-        ({
+        {
           bodyTemplate: { lookup: 'startsWith', value: 'welcome-' },
-        } as unknown as NotificationFilter<any>),
+        } as unknown as NotificationFilter<any>,
         0,
         10,
       );
@@ -1401,9 +1360,9 @@ describe('PrismaNotificationBackend', () => {
       findManyMock.mockResolvedValue([mockNotification]);
 
       await backend.filterNotifications(
-        ({
+        {
           subjectTemplate: { lookup: 'endsWith', value: '-suffix' },
-        } as unknown as NotificationFilter<any>),
+        } as unknown as NotificationFilter<any>,
         0,
         10,
       );
@@ -1425,9 +1384,9 @@ describe('PrismaNotificationBackend', () => {
       findManyMock.mockResolvedValue([mockNotification]);
 
       await backend.filterNotifications(
-        ({
+        {
           contextName: { lookup: 'includes', value: 'core' },
-        } as unknown as NotificationFilter<any>),
+        } as unknown as NotificationFilter<any>,
         0,
         10,
       );
@@ -1449,9 +1408,9 @@ describe('PrismaNotificationBackend', () => {
       findManyMock.mockResolvedValue([mockNotification]);
 
       await backend.filterNotifications(
-        ({
+        {
           bodyTemplate: { lookup: 'exact', value: 'template-v1' },
-        } as unknown as NotificationFilter<any>),
+        } as unknown as NotificationFilter<any>,
         0,
         10,
       );
@@ -1473,9 +1432,9 @@ describe('PrismaNotificationBackend', () => {
       findManyMock.mockResolvedValue([mockNotification]);
 
       await backend.filterNotifications(
-        ({
+        {
           bodyTemplate: { lookup: 'startsWith', value: 'Welcome-', caseSensitive: false },
-        } as unknown as NotificationFilter<any>),
+        } as unknown as NotificationFilter<any>,
         0,
         10,
       );
@@ -1634,7 +1593,6 @@ describe('PrismaNotificationBackend', () => {
           subjectTemplate: 'Invalid subject',
           extraParams: null,
           sendAfter: null,
-          // biome-ignore lint/suspicious/noExplicitAny: Testing invalid input
         } as any,
       ];
 
@@ -1850,7 +1808,6 @@ describe('PrismaNotificationBackend', () => {
           subjectTemplate: 'Subject 1',
           extraParams: null,
           sendAfter: null,
-          // biome-ignore lint/suspicious/noExplicitAny: Testing attachments in bulk
           attachments: [{ fileId: 'file-123', description: 'Test attachment' }] as any,
         },
         {
@@ -2004,7 +1961,6 @@ describe('PrismaNotificationBackend', () => {
         const createMock = mockPrismaClient.notification.create as Mock;
         createMock.mockResolvedValue(oneOffNotification);
 
-        // biome-ignore lint/suspicious/noExplicitAny: testing backend mapper behavior with persisted field
         await backend.persistOneOffNotification(input as any);
 
         expect(mockPrismaClient.notification.create).toHaveBeenCalledWith({

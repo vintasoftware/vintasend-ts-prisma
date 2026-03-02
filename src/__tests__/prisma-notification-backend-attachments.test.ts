@@ -1,17 +1,17 @@
 import type {
   AttachmentFileRecord,
+  BaseAttachmentManager,
   NotificationAttachment,
-} from 'vintasend/dist/types/attachment';
-import type { BaseAttachmentManager } from 'vintasend/dist/services/attachment-manager/base-attachment-manager';
+} from 'vintasend';
+import { type Mock, type Mocked, vi } from 'vitest';
 import { PrismaNotificationBackendFactory } from '../index';
-import { NotificationStatusEnum, NotificationTypeEnum } from '../prisma-notification-backend';
 import type {
   NotificationPrismaClientInterface,
-  PrismaNotificationBackend,
   PrismaAttachmentFileModel,
   PrismaNotificationAttachmentModel,
+  PrismaNotificationBackend,
 } from '../prisma-notification-backend';
-import { vi, type Mock, type Mocked } from 'vitest';
+import { NotificationStatusEnum, NotificationTypeEnum } from '../prisma-notification-backend';
 
 type TestContexts = {
   testContext: {
@@ -20,15 +20,9 @@ type TestContexts = {
 };
 
 describe('PrismaNotificationBackend - Attachments', () => {
-  let mockPrismaClient: Mocked<
-    NotificationPrismaClientInterface<string, string>
-  >;
+  let mockPrismaClient: Mocked<NotificationPrismaClientInterface<string, string>>;
   let mockAttachmentManager: Mocked<BaseAttachmentManager>;
-  let backend: PrismaNotificationBackend<
-    // biome-ignore lint/suspicious/noExplicitAny: any just for testing
-    typeof mockPrismaClient,
-    any
-  >;
+  let backend: PrismaNotificationBackend<typeof mockPrismaClient, any>;
 
   const mockAttachmentFile: PrismaAttachmentFileModel = {
     id: 'file-123',
@@ -119,9 +113,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
 
   describe('getAttachmentFile', () => {
     it('should retrieve an attachment file by ID', async () => {
-      (mockPrismaClient.attachmentFile.findUnique as Mock).mockResolvedValue(
-        mockAttachmentFile,
-      );
+      (mockPrismaClient.attachmentFile.findUnique as Mock).mockResolvedValue(mockAttachmentFile);
 
       const result = await backend.getAttachmentFile('file-123');
 
@@ -148,9 +140,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
 
   describe('findAttachmentFileByChecksum', () => {
     it('should retrieve an attachment file by checksum', async () => {
-      (mockPrismaClient.attachmentFile.findUnique as Mock).mockResolvedValue(
-        mockAttachmentFile,
-      );
+      (mockPrismaClient.attachmentFile.findUnique as Mock).mockResolvedValue(mockAttachmentFile);
 
       const result = await backend.findAttachmentFileByChecksum('abc123');
 
@@ -180,12 +170,8 @@ describe('PrismaNotificationBackend - Attachments', () => {
 
   describe('deleteAttachmentFile', () => {
     it('should delete an attachment file and its storage', async () => {
-      (mockPrismaClient.attachmentFile.findUnique as Mock).mockResolvedValue(
-        mockAttachmentFile,
-      );
-      (mockPrismaClient.attachmentFile.delete as Mock).mockResolvedValue(
-        mockAttachmentFile,
-      );
+      (mockPrismaClient.attachmentFile.findUnique as Mock).mockResolvedValue(mockAttachmentFile);
+      (mockPrismaClient.attachmentFile.delete as Mock).mockResolvedValue(mockAttachmentFile);
 
       await backend.deleteAttachmentFile('file-123');
 
@@ -213,9 +199,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
 
   describe('getOrphanedAttachmentFiles', () => {
     it('should retrieve attachment files not referenced by any notifications', async () => {
-      (mockPrismaClient.attachmentFile.findMany as Mock).mockResolvedValue([
-        mockAttachmentFile,
-      ]);
+      (mockPrismaClient.attachmentFile.findMany as Mock).mockResolvedValue([mockAttachmentFile]);
 
       const result = await backend.getOrphanedAttachmentFiles();
 
@@ -276,9 +260,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
     });
 
     it('should throw error if AttachmentManager not provided', async () => {
-      const backendWithoutManager = new PrismaNotificationBackendFactory().create(
-        mockPrismaClient,
-      );
+      const backendWithoutManager = new PrismaNotificationBackendFactory().create(mockPrismaClient);
 
       (mockPrismaClient.notificationAttachment.findMany as Mock).mockResolvedValue([
         mockNotificationAttachment,
@@ -303,9 +285,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
 
       await backend.deleteNotificationAttachment('1', 'att-1');
 
-      expect(
-        (mockPrismaClient.notificationAttachment as any).deleteMany,
-      ).toHaveBeenCalledWith({
+      expect((mockPrismaClient.notificationAttachment as any).deleteMany).toHaveBeenCalledWith({
         where: {
           id: 'att-1',
           notificationId: '1',
@@ -360,9 +340,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
       };
 
       // Stub fileToBuffer and calculateChecksum to produce the fixed checksum
-      (mockAttachmentManager.fileToBuffer as Mock).mockResolvedValue(
-        attachmentInput.file,
-      );
+      (mockAttachmentManager.fileToBuffer as Mock).mockResolvedValue(attachmentInput.file);
       (mockAttachmentManager.calculateChecksum as Mock).mockReturnValue(fixedChecksum);
 
       // Return an existing file for the checksum lookup
@@ -496,15 +474,11 @@ describe('PrismaNotificationBackend - Attachments', () => {
       });
 
       (mockPrismaClient.attachmentFile.findUnique as Mock).mockResolvedValue(null); // No existing file with checksum
-      (mockPrismaClient.attachmentFile.create as Mock).mockResolvedValue(
-        mockAttachmentFile,
-      );
+      (mockPrismaClient.attachmentFile.create as Mock).mockResolvedValue(mockAttachmentFile);
       (mockPrismaClient.notificationAttachment.create as Mock).mockResolvedValue(
         mockNotificationAttachment,
       );
-      (mockPrismaClient.notification.findUnique as Mock).mockResolvedValue(
-        mockNotification,
-      );
+      (mockPrismaClient.notification.findUnique as Mock).mockResolvedValue(mockNotification);
 
       const mockAttachmentFileInterface = {
         read: vi.fn().mockResolvedValue(Buffer.from('test')),
@@ -520,11 +494,13 @@ describe('PrismaNotificationBackend - Attachments', () => {
 
       // Verify attachment manager methods were called
       expect(mockAttachmentManager.fileToBuffer).toHaveBeenCalledWith(Buffer.from('test content'));
-      expect(mockAttachmentManager.calculateChecksum).toHaveBeenCalledWith(Buffer.from('test content'));
+      expect(mockAttachmentManager.calculateChecksum).toHaveBeenCalledWith(
+        Buffer.from('test content'),
+      );
       expect(mockAttachmentManager.uploadFile).toHaveBeenCalledWith(
         Buffer.from('test content'),
         'test.pdf',
-        'application/pdf'
+        'application/pdf',
       );
       expect(mockPrismaClient.attachmentFile.create).toHaveBeenCalled();
       expect(mockPrismaClient.notificationAttachment.create).toHaveBeenCalled();
@@ -557,15 +533,11 @@ describe('PrismaNotificationBackend - Attachments', () => {
         attachments: [],
       });
 
-      (mockPrismaClient.attachmentFile.findUnique as Mock).mockResolvedValue(
-        mockAttachmentFile,
-      );
+      (mockPrismaClient.attachmentFile.findUnique as Mock).mockResolvedValue(mockAttachmentFile);
       (mockPrismaClient.notificationAttachment.create as Mock).mockResolvedValue(
         mockNotificationAttachment,
       );
-      (mockPrismaClient.notification.findUnique as Mock).mockResolvedValue(
-        mockNotification,
-      );
+      (mockPrismaClient.notification.findUnique as Mock).mockResolvedValue(mockNotification);
 
       const mockAttachmentFileInterface = {
         read: vi.fn().mockResolvedValue(Buffer.from('test')),
@@ -650,9 +622,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
     });
 
     it('should throw error when attachments provided but no AttachmentManager', async () => {
-      const backendWithoutManager = new PrismaNotificationBackendFactory().create(
-        mockPrismaClient,
-      );
+      const backendWithoutManager = new PrismaNotificationBackendFactory().create(mockPrismaClient);
 
       const input = {
         userId: 'user1',
@@ -731,9 +701,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
         attachments: [],
       };
 
-      (mockPrismaClient.notification.create as Mock).mockResolvedValue(
-        oneOffNotification,
-      );
+      (mockPrismaClient.notification.create as Mock).mockResolvedValue(oneOffNotification);
 
       (mockPrismaClient.attachmentFile.findUnique as Mock).mockResolvedValue(null);
       (mockPrismaClient.attachmentFile.create as Mock).mockResolvedValue({
@@ -812,9 +780,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
         attachments: [],
       };
 
-      (mockPrismaClient.notification.create as Mock).mockResolvedValue(
-        oneOffNotification,
-      );
+      (mockPrismaClient.notification.create as Mock).mockResolvedValue(oneOffNotification);
 
       (mockPrismaClient.attachmentFile.findUnique as Mock).mockResolvedValue({
         id: fileRecord.id,
@@ -908,9 +874,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
         attachments: undefined,
       };
 
-      (mockPrismaClient.notification.create as Mock).mockResolvedValue(
-        oneOffNotification,
-      );
+      (mockPrismaClient.notification.create as Mock).mockResolvedValue(oneOffNotification);
 
       const result = await backend.persistOneOffNotification(input);
 
@@ -932,9 +896,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
         delete: vi.fn().mockResolvedValue(undefined),
       };
 
-      (mockPrismaClient.notification.findUnique as Mock).mockResolvedValue(
-        mockNotification,
-      );
+      (mockPrismaClient.notification.findUnique as Mock).mockResolvedValue(mockNotification);
       (mockAttachmentManager.reconstructAttachmentFile as Mock).mockReturnValue(
         mockAttachmentFileInterface,
       );
