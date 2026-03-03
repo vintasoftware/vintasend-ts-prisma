@@ -233,10 +233,10 @@ type AwaitedTuple<T extends readonly unknown[]> = {
   [K in keyof T]: Awaited<T[K]>;
 };
 
-type PrismaTransactionOptions<Prisma extends { TransactionIsolationLevel: unknown }> = {
+type PrismaTransactionOptions<TransactionIsolationLevel extends string> = {
   maxWait?: number;
   timeout?: number;
-  isolationLevel?: Prisma['TransactionIsolationLevel'];
+  isolationLevel?: TransactionIsolationLevel;
 };
 
 export interface NotificationPrismaTransactionClientInterface<NotificationIdType, UserIdType>
@@ -245,18 +245,18 @@ export interface NotificationPrismaTransactionClientInterface<NotificationIdType
 export interface NotificationPrismaClientInterface<
   NotificationIdType,
   UserIdType,
-  Prisma extends { TransactionIsolationLevel: unknown },
+  TransactionIsolationLevel extends string,
 > {
   $transaction: {
     <P extends readonly PromiseLike<unknown>[]>(
       arg: [...P],
-      options?: PrismaTransactionOptions<Prisma>,
+      options?: PrismaTransactionOptions<TransactionIsolationLevel>,
     ): Promise<AwaitedTuple<P>>;
     <R>(
       fn: (
         prisma: NotificationPrismaTransactionClientInterface<NotificationIdType, UserIdType>,
       ) => Promise<R>,
-      options?: PrismaTransactionOptions<Prisma>,
+      options?: PrismaTransactionOptions<TransactionIsolationLevel>,
     ): Promise<R>;
   };
 }
@@ -265,23 +265,23 @@ export interface NotificationPrismaClientInterface<
   NotificationIdType,
   UserIdType,
   // biome-ignore lint/correctness/noUnusedVariables: This is an interface that will be implemented by the actual Prisma client, so we need to include the $transaction method signature here for type compatibility, even if it's not used directly in our code.
-  Prisma extends { TransactionIsolationLevel: unknown },
+  TransactionIsolationLevel extends string,
 > extends NotificationPrismaDelegates<NotificationIdType, UserIdType> {}
 
 type InteractiveTransactionRunner<
   NotificationIdType,
   UserIdType,
-  Prisma extends { TransactionIsolationLevel: unknown },
+  TransactionIsolationLevel extends string,
 > = {
   <P extends readonly PromiseLike<unknown>[]>(
     arg: [...P],
-    options?: PrismaTransactionOptions<Prisma>,
+    options?: PrismaTransactionOptions<TransactionIsolationLevel>,
   ): Promise<AwaitedTuple<P>>;
   <R>(
     fn: (
       prisma: NotificationPrismaTransactionClientInterface<NotificationIdType, UserIdType>,
     ) => Promise<R>,
-    options?: PrismaTransactionOptions<Prisma>,
+    options?: PrismaTransactionOptions<TransactionIsolationLevel>,
   ): Promise<R>;
 };
 
@@ -375,10 +375,10 @@ export class PrismaNotificationBackend<
   Client extends NotificationPrismaClientInterface<
     Config['NotificationIdType'],
     Config['UserIdType'],
-    Prisma
+    TransactionIsolationLevel
   >,
   Config extends BaseNotificationTypeConfig,
-  Prisma extends { TransactionIsolationLevel: unknown },
+  TransactionIsolationLevel extends string,
 > implements BaseNotificationBackend<Config>
 {
   private logger?: BaseLogger;
@@ -1060,7 +1060,7 @@ export class PrismaNotificationBackend<
     const transactionRunner = this.prismaClient.$transaction as InteractiveTransactionRunner<
       Config['NotificationIdType'],
       Config['UserIdType'],
-      Prisma
+      TransactionIsolationLevel
     >;
 
     return transactionRunner(fn);
@@ -1787,16 +1787,16 @@ export class PrismaNotificationBackend<
 
 export class PrismaNotificationBackendFactory<
   Config extends BaseNotificationTypeConfig,
-  Prisma extends { TransactionIsolationLevel: unknown },
+  TransactionIsolationLevel extends string,
 > {
   create<
     Client extends NotificationPrismaClientInterface<
       Config['NotificationIdType'],
       Config['UserIdType'],
-      Prisma
+      TransactionIsolationLevel
     >,
   >(prismaClient: Client, attachmentManager?: BaseAttachmentManager, identifier?: string) {
-    return new PrismaNotificationBackend<Client, Config, Prisma>(
+    return new PrismaNotificationBackend<Client, Config, TransactionIsolationLevel>(
       prismaClient,
       attachmentManager,
       identifier,
