@@ -312,6 +312,51 @@ describe('PrismaNotificationBackend', () => {
       expect(result.status).toBe(NotificationStatusEnum.SENT);
       expect(result.sentAt).toBeInstanceOf(Date);
     });
+
+    it('should return existing notification when update fails with P2025 but notification is already sent', async () => {
+      const sentNotification: DatabaseNotification<any> = {
+        ...mockNotification,
+        status: NotificationStatusEnum.SENT,
+        sentAt: new Date(),
+      };
+
+      const updateMock = mockPrismaClient.notification.update as Mock;
+      const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
+
+      updateMock.mockRejectedValueOnce({
+        code: 'P2025',
+        message: 'No record was found for an update.',
+      });
+      findUniqueMock.mockResolvedValue(sentNotification);
+
+      const result: AnyDatabaseNotification<any> = await backend.markAsSent('1', true);
+
+      expect(mockPrismaClient.notification.findUnique).toHaveBeenCalledWith({
+        where: { id: '1' },
+      });
+      expect(result.status).toBe(NotificationStatusEnum.SENT);
+    });
+
+    it('should rethrow P2025 when current notification is not sent', async () => {
+      const updateMock = mockPrismaClient.notification.update as Mock;
+      const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
+
+      const updateError = {
+        code: 'P2025',
+        message: 'No record was found for an update.',
+      };
+
+      updateMock.mockRejectedValueOnce(updateError);
+      findUniqueMock.mockResolvedValue({
+        ...mockNotification,
+        status: NotificationStatusEnum.FAILED,
+      });
+
+      await expect(backend.markAsSent('1', true)).rejects.toEqual(updateError);
+      expect(mockPrismaClient.notification.findUnique).toHaveBeenCalledWith({
+        where: { id: '1' },
+      });
+    });
   });
 
   describe('markAsRead', () => {

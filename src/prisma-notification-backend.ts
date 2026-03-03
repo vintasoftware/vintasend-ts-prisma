@@ -501,6 +501,23 @@ export class PrismaNotificationBackend<
     );
   }
 
+  private isRecordNotFoundError(error: unknown): boolean {
+    if (typeof error === 'object' && error !== null && 'code' in error) {
+      const errorCode = (error as { code?: unknown }).code;
+
+      if (errorCode === 'P2025') {
+        return true;
+      }
+    }
+
+    const normalizedError = String(error).toLowerCase();
+
+    return (
+      normalizedError.includes('no record was found for an update') ||
+      normalizedError.includes('required but not found')
+    );
+  }
+
   constructor(
     private prismaClient: Client,
     private attachmentManager?: BaseAttachmentManager,
@@ -1516,15 +1533,36 @@ export class PrismaNotificationBackend<
     checkIsPending = true,
   ): Promise<AnyDatabaseNotification<Config>> {
     this.logger?.info(`Marking notification ${notificationId} as sent`);
-    const updated = await this.prismaClient.notification.update({
-      where: this.buildStatusWhere(notificationId, {
-        checkStatus: checkIsPending ? NotificationStatusEnum.PENDING_SEND : undefined,
-      }),
-      data: {
-        status: NotificationStatusEnum.SENT,
-        sentAt: new Date(),
-      },
-    });
+    let updated: DelegateTypes['notificationModel'];
+
+    try {
+      updated = await this.prismaClient.notification.update({
+        where: this.buildStatusWhere(notificationId, {
+          checkStatus: checkIsPending ? NotificationStatusEnum.PENDING_SEND : undefined,
+        }),
+        data: {
+          status: NotificationStatusEnum.SENT,
+          sentAt: new Date(),
+        },
+      });
+    } catch (error) {
+      if (!checkIsPending || !this.isRecordNotFoundError(error)) {
+        throw error;
+      }
+
+      const existing = await this.prismaClient.notification.findUnique({
+        where: { id: notificationId as Config['NotificationIdType'] },
+      });
+
+      if (existing?.status === NotificationStatusEnum.SENT) {
+        this.logger?.info(
+          `Notification ${notificationId} was already marked as sent by another worker`,
+        );
+        return this.serializeAnyNotification(existing);
+      }
+
+      throw error;
+    }
 
     this.logger?.info(`Notification ${notificationId} marked as sent`);
     return this.serializeAnyNotification(updated);
@@ -1537,15 +1575,36 @@ export class PrismaNotificationBackend<
     checkIsPending = true,
   ): Promise<AnyDatabaseNotification<Config>> {
     this.logger?.info(`Marking notification ${notificationId} as failed`);
-    const updated = await this.prismaClient.notification.update({
-      where: this.buildStatusWhere(notificationId, {
-        checkStatus: checkIsPending ? NotificationStatusEnum.PENDING_SEND : undefined,
-      }),
-      data: {
-        status: NotificationStatusEnum.FAILED,
-        sentAt: new Date(),
-      },
-    });
+    let updated: DelegateTypes['notificationModel'];
+
+    try {
+      updated = await this.prismaClient.notification.update({
+        where: this.buildStatusWhere(notificationId, {
+          checkStatus: checkIsPending ? NotificationStatusEnum.PENDING_SEND : undefined,
+        }),
+        data: {
+          status: NotificationStatusEnum.FAILED,
+          sentAt: new Date(),
+        },
+      });
+    } catch (error) {
+      if (!checkIsPending || !this.isRecordNotFoundError(error)) {
+        throw error;
+      }
+
+      const existing = await this.prismaClient.notification.findUnique({
+        where: { id: notificationId as Config['NotificationIdType'] },
+      });
+
+      if (existing?.status === NotificationStatusEnum.FAILED) {
+        this.logger?.info(
+          `Notification ${notificationId} was already marked as failed by another worker`,
+        );
+        return this.serializeAnyNotification(existing);
+      }
+
+      throw error;
+    }
 
     this.logger?.info(`Notification ${notificationId} marked as failed`);
     return this.serializeAnyNotification(updated);
