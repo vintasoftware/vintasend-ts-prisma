@@ -233,43 +233,55 @@ type AwaitedTuple<T extends readonly unknown[]> = {
   [K in keyof T]: Awaited<T[K]>;
 };
 
-type PrismaTransactionOptions = {
+type PrismaTransactionOptions<Prisma extends { TransactionIsolationLevel: unknown }> = {
   maxWait?: number;
   timeout?: number;
-  isolationLevel?: string;
+  isolationLevel?: Prisma['TransactionIsolationLevel'];
 };
 
 export interface NotificationPrismaTransactionClientInterface<NotificationIdType, UserIdType>
   extends NotificationPrismaDelegates<NotificationIdType, UserIdType> {}
 
-export interface NotificationPrismaClientInterface<NotificationIdType, UserIdType> {
+export interface NotificationPrismaClientInterface<
+  NotificationIdType,
+  UserIdType,
+  Prisma extends { TransactionIsolationLevel: unknown },
+> {
   $transaction: {
     <P extends readonly PromiseLike<unknown>[]>(
       arg: [...P],
-      options?: PrismaTransactionOptions,
+      options?: PrismaTransactionOptions<Prisma>,
     ): Promise<AwaitedTuple<P>>;
     <R>(
       fn: (
         prisma: NotificationPrismaTransactionClientInterface<NotificationIdType, UserIdType>,
       ) => Promise<R>,
-      options?: PrismaTransactionOptions,
+      options?: PrismaTransactionOptions<Prisma>,
     ): Promise<R>;
   };
 }
 
-export interface NotificationPrismaClientInterface<NotificationIdType, UserIdType>
-  extends NotificationPrismaDelegates<NotificationIdType, UserIdType> {}
+export interface NotificationPrismaClientInterface<
+  NotificationIdType,
+  UserIdType,
+  // biome-ignore lint/correctness/noUnusedVariables: This is an interface that will be implemented by the actual Prisma client, so we need to include the $transaction method signature here for type compatibility, even if it's not used directly in our code.
+  Prisma extends { TransactionIsolationLevel: unknown },
+> extends NotificationPrismaDelegates<NotificationIdType, UserIdType> {}
 
-type InteractiveTransactionRunner<NotificationIdType, UserIdType> = {
+type InteractiveTransactionRunner<
+  NotificationIdType,
+  UserIdType,
+  Prisma extends { TransactionIsolationLevel: unknown },
+> = {
   <P extends readonly PromiseLike<unknown>[]>(
     arg: [...P],
-    options?: PrismaTransactionOptions,
+    options?: PrismaTransactionOptions<Prisma>,
   ): Promise<AwaitedTuple<P>>;
   <R>(
     fn: (
       prisma: NotificationPrismaTransactionClientInterface<NotificationIdType, UserIdType>,
     ) => Promise<R>,
-    options?: PrismaTransactionOptions,
+    options?: PrismaTransactionOptions<Prisma>,
   ): Promise<R>;
 };
 
@@ -362,9 +374,11 @@ function convertJsonValueToRecord(jsonValue: JsonValue): Record<string, string |
 export class PrismaNotificationBackend<
   Client extends NotificationPrismaClientInterface<
     Config['NotificationIdType'],
-    Config['UserIdType']
+    Config['UserIdType'],
+    Prisma
   >,
   Config extends BaseNotificationTypeConfig,
+  Prisma extends { TransactionIsolationLevel: unknown },
 > implements BaseNotificationBackend<Config>
 {
   private logger?: BaseLogger;
@@ -1045,7 +1059,8 @@ export class PrismaNotificationBackend<
   ): Promise<R> {
     const transactionRunner = this.prismaClient.$transaction as InteractiveTransactionRunner<
       Config['NotificationIdType'],
-      Config['UserIdType']
+      Config['UserIdType'],
+      Prisma
     >;
 
     return transactionRunner(fn);
@@ -1770,14 +1785,18 @@ export class PrismaNotificationBackend<
   }
 }
 
-export class PrismaNotificationBackendFactory<Config extends BaseNotificationTypeConfig> {
+export class PrismaNotificationBackendFactory<
+  Config extends BaseNotificationTypeConfig,
+  Prisma extends { TransactionIsolationLevel: unknown },
+> {
   create<
     Client extends NotificationPrismaClientInterface<
       Config['NotificationIdType'],
-      Config['UserIdType']
+      Config['UserIdType'],
+      Prisma
     >,
   >(prismaClient: Client, attachmentManager?: BaseAttachmentManager, identifier?: string) {
-    return new PrismaNotificationBackend<Client, Config>(
+    return new PrismaNotificationBackend<Client, Config, Prisma>(
       prismaClient,
       attachmentManager,
       identifier,
