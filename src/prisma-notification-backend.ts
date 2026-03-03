@@ -73,7 +73,8 @@ export interface PrismaAttachmentFileModel {
   contentType: string;
   size: number;
   checksum: string;
-  storageIdentifiers: JsonValue;
+  storageIdentifiers?: JsonValue;
+  storageMetadata?: JsonValue;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -144,9 +145,12 @@ type PrismaNotificationWhereInput<NotificationIdType, UserIdType> = {
   sentAt?: PrismaDateRangeFilter;
 };
 
-type FirstArg<T> = T extends (arg: infer A, ...rest: readonly unknown[]) => unknown ? A : never;
+// biome-ignore lint/suspicious/noExplicitAny: This is a generic type for the Prisma client delegate types, which can vary greatly depending on the consumer's Prisma schema, so we allow any here.
+type AsFunction<T> = Extract<T, (...args: any[]) => unknown>;
 
-type FnReturn<T> = T extends (...args: readonly unknown[]) => infer R ? R : never;
+type FirstArg<T> = Parameters<AsFunction<T>>[0];
+
+type FnReturn<T> = ReturnType<AsFunction<T>>;
 
 type PromiseResolved<T> = T extends PromiseLike<infer R> ? R : never;
 
@@ -341,7 +345,8 @@ export interface NotificationPrismaTransactionClientInterface<
 export interface NotificationPrismaClientInterface<
   NotificationIdType,
   UserIdType,
-  TransactionRunner extends (...args: readonly unknown[]) => Promise<unknown>,
+  // biome-ignore lint/suspicious/noExplicitAny: This is a generic type for the transaction runner function, which can vary greatly depending on the Prisma client setup, so we allow any here.
+  TransactionRunner extends (...args: any[]) => Promise<unknown>,
   // biome-ignore lint/correctness/noUnusedVariables: Delegate types are used for typing the transaction client interface and come from consumer-generated Prisma client types.
   DelegateTypes extends NotificationPrismaDelegateTypes<NotificationIdType, UserIdType>,
 > {
@@ -352,7 +357,8 @@ export interface NotificationPrismaClientInterface<
   NotificationIdType,
   UserIdType,
   // biome-ignore lint/correctness/noUnusedVariables: Transaction runner type comes from consumer-generated Prisma client types.
-  TransactionRunner extends (...args: readonly unknown[]) => Promise<unknown>,
+  // biome-ignore lint/suspicious/noExplicitAny: This is a generic type for the transaction runner function, which can vary greatly depending on the Prisma client setup, so we allow any here.
+  TransactionRunner extends (...args: any[]) => Promise<unknown>,
   DelegateTypes extends NotificationPrismaDelegateTypes<NotificationIdType, UserIdType>,
 > extends NotificationPrismaDelegates<NotificationIdType, UserIdType, DelegateTypes> {}
 
@@ -467,7 +473,8 @@ export class PrismaNotificationBackend<
   >,
   Config extends BaseNotificationTypeConfig,
   TransactionIsolationLevel extends string,
-  TransactionRunner extends (...args: readonly unknown[]) => Promise<unknown>,
+  // biome-ignore lint/suspicious/noExplicitAny: This is a generic type for the transaction runner function, which can vary greatly depending on the Prisma client setup, so we allow any here.
+  TransactionRunner extends (...args: any[]) => Promise<unknown>,
   DelegateTypes extends NotificationPrismaDelegateTypes<
     Config['NotificationIdType'],
     Config['UserIdType']
@@ -1836,13 +1843,20 @@ export class PrismaNotificationBackend<
    * @private
    */
   private serializeAttachmentFileRecord(file: PrismaAttachmentFileModel): AttachmentFileRecord {
+    const storageIdentifiers =
+      file.storageIdentifiers ??
+      file.storageMetadata ??
+      (() => {
+        throw new Error('Attachment file is missing storage identifiers metadata');
+      })();
+
     return {
       id: file.id,
       filename: file.filename,
       contentType: file.contentType,
       size: file.size,
       checksum: file.checksum,
-      storageIdentifiers: file.storageIdentifiers as StorageIdentifiers,
+      storageIdentifiers: storageIdentifiers as StorageIdentifiers,
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
     };
@@ -1882,7 +1896,8 @@ export class PrismaNotificationBackend<
 export class PrismaNotificationBackendFactory<
   Config extends BaseNotificationTypeConfig,
   TransactionIsolationLevel extends string,
-  TransactionRunner extends (...args: readonly unknown[]) => Promise<unknown>,
+  // biome-ignore lint/suspicious/noExplicitAny: This is a generic type for the transaction runner function, which can vary greatly depending on the Prisma client setup, so we allow any here.
+  TransactionRunner extends (...args: any[]) => Promise<unknown>,
   DelegateTypes extends NotificationPrismaDelegateTypes<
     Config['NotificationIdType'],
     Config['UserIdType']
