@@ -144,14 +144,6 @@ type PrismaNotificationWhereInput<NotificationIdType, UserIdType> = {
   sentAt?: PrismaDateRangeFilter;
 };
 
-type AwaitedTuple<T extends readonly unknown[]> = {
-  [K in keyof T]: Awaited<T[K]>;
-};
-
-type PrismaTransactionOptions = {
-  isolationLevel?: unknown;
-};
-
 interface NotificationPrismaDelegates<NotificationIdType, UserIdType> {
   notification: {
     findMany(args?: {
@@ -237,26 +229,47 @@ interface NotificationPrismaDelegates<NotificationIdType, UserIdType> {
   };
 }
 
+type AwaitedTuple<T extends readonly unknown[]> = {
+  [K in keyof T]: Awaited<T[K]>;
+};
+
+type PrismaTransactionOptions = {
+  isolationLevel?: unknown;
+};
+
 export interface NotificationPrismaTransactionClientInterface<NotificationIdType, UserIdType>
   extends NotificationPrismaDelegates<NotificationIdType, UserIdType> {}
 
 export interface NotificationPrismaClientInterface<NotificationIdType, UserIdType> {
   $transaction: {
+    <P extends readonly PromiseLike<unknown>[]>(
+      arg: [...P],
+      options?: PrismaTransactionOptions,
+    ): Promise<AwaitedTuple<P>>;
     <R>(
       fn: (
         prisma: NotificationPrismaTransactionClientInterface<NotificationIdType, UserIdType>,
       ) => Promise<R>,
       options?: PrismaTransactionOptions,
     ): Promise<R>;
-    <P extends readonly unknown[]>(
-      arg: [...P],
-      options?: PrismaTransactionOptions,
-    ): Promise<AwaitedTuple<P>>;
   };
 }
 
 export interface NotificationPrismaClientInterface<NotificationIdType, UserIdType>
   extends NotificationPrismaDelegates<NotificationIdType, UserIdType> {}
+
+type InteractiveTransactionRunner<NotificationIdType, UserIdType> = {
+  <P extends readonly PromiseLike<unknown>[]>(
+    arg: [...P],
+    options?: PrismaTransactionOptions,
+  ): Promise<AwaitedTuple<P>>;
+  <R>(
+    fn: (
+      prisma: NotificationPrismaTransactionClientInterface<NotificationIdType, UserIdType>,
+    ) => Promise<R>,
+    options?: PrismaTransactionOptions,
+  ): Promise<R>;
+};
 
 // cause typescript not to expand types and preserve names
 type NoExpand<T> = T extends unknown ? T : never;
@@ -984,7 +997,7 @@ export class PrismaNotificationBackend<
 
     // Use transaction to ensure atomicity of notification + attachments
     this.logger?.info(`Creating notification with ${attachments.length} attachment(s)`);
-    return await this.prismaClient.$transaction(async (tx) => {
+    return await this.runInteractiveTransaction(async (tx) => {
       const created = await tx.notification.create({
         data: buildData(notificationData as TInput),
         include: notificationWithAttachmentsInclude,
@@ -1020,6 +1033,22 @@ export class PrismaNotificationBackend<
     return this.attachmentManager;
   }
 
+  private runInteractiveTransaction<R>(
+    fn: (
+      tx: NotificationPrismaTransactionClientInterface<
+        Config['NotificationIdType'],
+        Config['UserIdType']
+      >,
+    ) => Promise<R>,
+  ): Promise<R> {
+    const transactionRunner = this.prismaClient.$transaction as InteractiveTransactionRunner<
+      Config['NotificationIdType'],
+      Config['UserIdType']
+    >;
+
+    return transactionRunner(fn);
+  }
+
   deserializeNotification(
     notification: Omit<AnyNotification<Config>, 'id'> & { id?: Config['NotificationIdType'] },
   ): PrismaNotificationCreateData<Config['UserIdType']> {
@@ -1028,7 +1057,7 @@ export class PrismaNotificationBackend<
 
   deserializeNotificationForUpdate(
     notification: Partial<Notification<Config>>,
-  ): Partial<Parameters<typeof this.prismaClient.notification.update>[0]['data']> {
+  ): Partial<BaseNotificationUpdateInput<Config['UserIdType']>> {
     const notificationWithOptionalGitCommitSha = notification as Partial<Notification<Config>> & {
       gitCommitSha?: string | null;
     };
@@ -1055,7 +1084,7 @@ export class PrismaNotificationBackend<
       ...(notificationWithOptionalGitCommitSha.gitCommitSha !== undefined
         ? { gitCommitSha: notificationWithOptionalGitCommitSha.gitCommitSha }
         : {}),
-    } as Partial<Parameters<typeof this.prismaClient.notification.update>[0]['data']>;
+    } as Partial<BaseNotificationUpdateInput<Config['UserIdType']>>;
   }
 
   async getAllPendingNotifications(): Promise<AnyDatabaseNotification<Config>[]> {
