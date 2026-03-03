@@ -16,11 +16,8 @@ You also need your own Prisma setup in the consuming app (`@prisma/client` + gen
 
 ```ts
 import { PrismaClient } from '@prisma/client';
-import type { Notification, Prisma, User } from '@prisma/client';
-import {
-	InferNotificationPrismaDelegateTypesFromClient,
-	PrismaNotificationBackendFactory,
-} from 'vintasend-prisma';
+import type { Notification, User } from '@prisma/client';
+import { PrismaNotificationBackendFactory } from 'vintasend-prisma';
 
 const prisma = new PrismaClient();
 
@@ -35,46 +32,28 @@ type NotificationTypeConfig = {
 	UserIdType: User['id'];
 };
 
-type DelegateTypes = InferNotificationPrismaDelegateTypesFromClient<
-	PrismaClient,
-	Notification['id'],
-	User['id']
->;
-
-const backend = new PrismaNotificationBackendFactory<
-	NotificationTypeConfig,
-	Prisma.TransactionIsolationLevel,
-	PrismaClient['$transaction'],
-	DelegateTypes
->().create(prisma);
+const backend = new PrismaNotificationBackendFactory<NotificationTypeConfig>().create(prisma);
 ```
 
-## Why these generic parameters?
+## Why this is still strict
 
-`PrismaNotificationBackendFactory` receives four generic parameters:
+Even though creation is now simpler, typing is still strict:
 
-1. `Config`  
-	 Your VintaSend notification type config (`ContextMap`, `NotificationIdType`, `UserIdType`).
-2. `TransactionIsolationLevel`  
-	 Usually `Prisma.TransactionIsolationLevel` from your generated client.
-3. `TransactionRunner`  
-	 Use `PrismaClient['$transaction']`.
-4. `DelegateTypes`  
-	 Use `InferNotificationPrismaDelegateTypesFromClient<PrismaClient, NotificationId, UserId>`.
+- `Config` still comes from your app (`ContextMap`, `NotificationIdType`, `UserIdType`).
+- Prisma delegate args/results and transaction runner types are inferred from your generated `PrismaClient` passed to `create(...)`.
+- If Prisma delegate signatures change, type errors surface in your code.
 
-This keeps the backend strict and ensures type errors surface if Prisma delegate signatures change.
+If you need explicit types in app code, you can still import `InferNotificationPrismaDelegateTypesFromClient`.
 
 ## With attachments
 
 If you want attachment storage/deletion support, pass a VintaSend attachment manager:
 
 ```ts
-const backend = new PrismaNotificationBackendFactory<
-	NotificationTypeConfig,
-	Prisma.TransactionIsolationLevel,
-	PrismaClient['$transaction'],
-	DelegateTypes
->().create(prisma, attachmentManager);
+const backend = new PrismaNotificationBackendFactory<NotificationTypeConfig>().create(
+	prisma,
+	attachmentManager,
+);
 ```
 
 If no attachment manager is provided, attachment-specific operations throw when called.

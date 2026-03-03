@@ -378,6 +378,15 @@ type InteractiveTransactionRunner<
   options?: PrismaInteractiveTransactionOptions<TransactionIsolationLevel>,
 ) => Promise<R>;
 
+type InferTransactionIsolationLevel<TransactionRunner> =
+  TransactionRunner extends <R>(
+    // biome-ignore lint/suspicious/noExplicitAny: This is a generic type for the transaction runner function, which can vary greatly depending on the Prisma client setup, so we allow any here.
+    fn: (...args: any[]) => Promise<R>,
+    options?: { isolationLevel?: infer L },
+  ) => Promise<R>
+    ? Extract<L, string>
+    : string;
+
 // cause typescript not to expand types and preserve names
 type NoExpand<T> = T extends unknown ? T : never;
 
@@ -1893,17 +1902,14 @@ export class PrismaNotificationBackend<
   }
 }
 
-export class PrismaNotificationBackendFactory<
-  Config extends BaseNotificationTypeConfig,
-  TransactionIsolationLevel extends string,
-  // biome-ignore lint/suspicious/noExplicitAny: This is a generic type for the transaction runner function, which can vary greatly depending on the Prisma client setup, so we allow any here.
-  TransactionRunner extends (...args: any[]) => Promise<unknown>,
-  DelegateTypes extends NotificationPrismaDelegateTypes<
-    Config['NotificationIdType'],
-    Config['UserIdType']
-  >,
-> {
+export class PrismaNotificationBackendFactory<Config extends BaseNotificationTypeConfig> {
   create<
+    // biome-ignore lint/suspicious/noExplicitAny: This is a generic type for the transaction runner function, which can vary greatly depending on the Prisma client setup, so we allow any here.
+    TransactionRunner extends (...args: any[]) => Promise<unknown>,
+    DelegateTypes extends NotificationPrismaDelegateTypes<
+      Config['NotificationIdType'],
+      Config['UserIdType']
+    >,
     Client extends NotificationPrismaClientInterface<
       Config['NotificationIdType'],
       Config['UserIdType'],
@@ -1914,7 +1920,7 @@ export class PrismaNotificationBackendFactory<
     return new PrismaNotificationBackend<
       Client,
       Config,
-      TransactionIsolationLevel,
+      InferTransactionIsolationLevel<TransactionRunner>,
       TransactionRunner,
       DelegateTypes
     >(prismaClient, attachmentManager, identifier);
