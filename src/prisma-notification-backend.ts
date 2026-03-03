@@ -839,7 +839,6 @@ export class PrismaNotificationBackend<
     const userId = ('userId' in notification ? notification.userId : null) as Config['UserIdType'];
     return {
       ...base,
-      userId,
       user: {
         connect: { id: userId },
       },
