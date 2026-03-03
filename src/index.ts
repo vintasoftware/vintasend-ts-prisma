@@ -4,5 +4,5 @@ export type {
   NotificationPrismaDelegateTypes,
   NotificationPrismaTransactionClientInterface,
   PrismaNotificationBackend,
-} from './prisma-notification-backend';
-export { PrismaNotificationBackendFactory } from './prisma-notification-backend';
+} from './prisma-notification-backend.js';
+export { PrismaNotificationBackendFactory } from './prisma-notification-backend.js';
