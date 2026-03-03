@@ -89,8 +89,6 @@ export interface PrismaNotificationAttachmentModel {
   attachmentFile?: PrismaAttachmentFileModel;
 }
 
-type PrismaPendingSendAfterFilter = { or: ({ lte: Date } | { equals: null })[] };
-
 type PrismaDateRangeFilter = {
   gte?: Date;
   lte?: Date;
@@ -133,7 +131,7 @@ type PrismaNotificationWhereInput<NotificationIdType, UserIdType> = {
   id?: NotificationIdType;
   status?: NotificationStatus | { not: NotificationStatus } | { in: NotificationStatus[] };
   notificationType?: NotificationType | { in: NotificationType[] };
-  sendAfter?: { gt: Date } | null | PrismaPendingSendAfterFilter | PrismaDateRangeFilter;
+  sendAfter?: { gt: Date } | null | PrismaDateRangeFilter;
   userId?: UserIdType | null;
   readAt?: null;
   emailOrPhone?: string | { not: null };
@@ -1217,9 +1215,7 @@ export class PrismaNotificationBackend<
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         status: NotificationStatusEnum.PENDING_SEND,
-        sendAfter: {
-          or: [{ lte: new Date() }, { equals: null }],
-        },
+        OR: [{ sendAfter: { lte: new Date() } }, { sendAfter: { equals: null } }],
       },
     });
 
@@ -1234,7 +1230,7 @@ export class PrismaNotificationBackend<
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         status: NotificationStatusEnum.PENDING_SEND,
-        sendAfter: { or: [{ lte: new Date() }, { equals: null }] },
+        OR: [{ sendAfter: { lte: new Date() } }, { sendAfter: { equals: null } }],
       },
       skip: page * pageSize,
       take: pageSize,

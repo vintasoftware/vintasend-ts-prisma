@@ -85,9 +85,7 @@ describe('PrismaNotificationBackend', () => {
       expect(mockPrismaClient.notification.findMany).toHaveBeenCalledWith({
         where: {
           status: NotificationStatusEnum.PENDING_SEND,
-          sendAfter: {
-            or: [{ lte: expect.any(Date) }, { equals: null }],
-          },
+          OR: [{ sendAfter: { lte: expect.any(Date) } }, { sendAfter: { equals: null } }],
         },
       });
       expect(result).toHaveLength(1);
@@ -469,9 +467,7 @@ describe('PrismaNotificationBackend', () => {
       expect(mockPrismaClient.notification.findMany).toHaveBeenCalledWith({
         where: {
           status: NotificationStatusEnum.PENDING_SEND,
-          sendAfter: {
-            or: [{ lte: expect.any(Date) }, { equals: null }],
-          },
+          OR: [{ sendAfter: { lte: expect.any(Date) } }, { sendAfter: { equals: null } }],
         },
         skip: 0,
         take: 100,
@@ -492,9 +488,7 @@ describe('PrismaNotificationBackend', () => {
       expect(mockPrismaClient.notification.findMany).toHaveBeenCalledWith({
         where: {
           status: NotificationStatusEnum.PENDING_SEND,
-          sendAfter: {
-            or: [{ lte: expect.any(Date) }, { equals: null }],
-          },
+          OR: [{ sendAfter: { lte: expect.any(Date) } }, { sendAfter: { equals: null } }],
         },
         skip: 100,
         take: 50,
