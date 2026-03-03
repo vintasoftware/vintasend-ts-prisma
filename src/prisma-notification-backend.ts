@@ -144,146 +144,233 @@ type PrismaNotificationWhereInput<NotificationIdType, UserIdType> = {
   sentAt?: PrismaDateRangeFilter;
 };
 
-interface NotificationPrismaDelegates<NotificationIdType, UserIdType> {
+type FirstArg<T> = T extends (arg: infer A, ...rest: readonly unknown[]) => unknown ? A : never;
+
+type FnReturn<T> = T extends (...args: readonly unknown[]) => infer R ? R : never;
+
+type PromiseResolved<T> = T extends PromiseLike<infer R> ? R : never;
+
+type ArrayItem<T> = T extends readonly (infer I)[] ? I : never;
+
+type NotificationFindManyFn<Client> = Client extends {
+  notification: { findMany: infer Fn };
+}
+  ? Fn
+  : never;
+
+type NotificationCreateFn<Client> = Client extends {
+  notification: { create: infer Fn };
+}
+  ? Fn
+  : never;
+
+type NotificationCreateManyAndReturnFn<Client> = Client extends {
+  notification: { createManyAndReturn: infer Fn };
+}
+  ? Fn
+  : never;
+
+type NotificationUpdateFn<Client> = Client extends {
+  notification: { update: infer Fn };
+}
+  ? Fn
+  : never;
+
+type NotificationFindUniqueFn<Client> = Client extends {
+  notification: { findUnique: infer Fn };
+}
+  ? Fn
+  : never;
+
+type AttachmentFileFindUniqueFn<Client> = Client extends {
+  attachmentFile: { findUnique: infer Fn };
+}
+  ? Fn
+  : never;
+
+type AttachmentFileCreateFn<Client> = Client extends {
+  attachmentFile: { create: infer Fn };
+}
+  ? Fn
+  : never;
+
+type AttachmentFileDeleteFn<Client> = Client extends {
+  attachmentFile: { delete: infer Fn };
+}
+  ? Fn
+  : never;
+
+type AttachmentFileFindManyFn<Client> = Client extends {
+  attachmentFile: { findMany: infer Fn };
+}
+  ? Fn
+  : never;
+
+type NotificationAttachmentFindManyFn<Client> = Client extends {
+  notificationAttachment: { findMany: infer Fn };
+}
+  ? Fn
+  : never;
+
+type NotificationAttachmentDeleteFn<Client> = Client extends {
+  notificationAttachment: { delete: infer Fn };
+}
+  ? Fn
+  : never;
+
+type NotificationAttachmentDeleteManyFn<Client> = Client extends {
+  notificationAttachment: { deleteMany: infer Fn };
+}
+  ? Fn
+  : never;
+
+type NotificationAttachmentCreateFn<Client> = Client extends {
+  notificationAttachment: { create: infer Fn };
+}
+  ? Fn
+  : never;
+
+export type NotificationPrismaDelegateTypes<NotificationIdType, UserIdType> = {
+  notificationFindManyArgs: unknown;
+  notificationCreateArgs: unknown;
+  notificationCreateManyAndReturnArgs: unknown;
+  notificationUpdateArgs: unknown;
+  notificationFindUniqueArgs: unknown;
+  attachmentFileFindUniqueArgs: unknown;
+  attachmentFileCreateArgs: unknown;
+  attachmentFileDeleteArgs: unknown;
+  attachmentFileFindManyArgs: unknown;
+  notificationAttachmentFindManyArgs: unknown;
+  notificationAttachmentDeleteArgs: unknown;
+  notificationAttachmentDeleteManyArgs: unknown;
+  notificationAttachmentCreateArgs: unknown;
+  notificationModel: PrismaNotificationModel<NotificationIdType, UserIdType>;
+  attachmentFileModel: PrismaAttachmentFileModel;
+  notificationAttachmentModel: PrismaNotificationAttachmentModel;
+};
+
+export type InferNotificationPrismaDelegateTypesFromClient<
+  Client,
+  _NotificationIdType,
+  _UserIdType,
+> = {
+  notificationFindManyArgs: FirstArg<NotificationFindManyFn<Client>>;
+  notificationCreateArgs: FirstArg<NotificationCreateFn<Client>>;
+  notificationCreateManyAndReturnArgs: FirstArg<NotificationCreateManyAndReturnFn<Client>>;
+  notificationUpdateArgs: FirstArg<NotificationUpdateFn<Client>>;
+  notificationFindUniqueArgs: FirstArg<NotificationFindUniqueFn<Client>>;
+  attachmentFileFindUniqueArgs: FirstArg<AttachmentFileFindUniqueFn<Client>>;
+  attachmentFileCreateArgs: FirstArg<AttachmentFileCreateFn<Client>>;
+  attachmentFileDeleteArgs: FirstArg<AttachmentFileDeleteFn<Client>>;
+  attachmentFileFindManyArgs: FirstArg<AttachmentFileFindManyFn<Client>>;
+  notificationAttachmentFindManyArgs: FirstArg<NotificationAttachmentFindManyFn<Client>>;
+  notificationAttachmentDeleteArgs: FirstArg<NotificationAttachmentDeleteFn<Client>>;
+  notificationAttachmentDeleteManyArgs: FirstArg<NotificationAttachmentDeleteManyFn<Client>>;
+  notificationAttachmentCreateArgs: FirstArg<NotificationAttachmentCreateFn<Client>>;
+  notificationModel: NonNullable<PromiseResolved<FnReturn<NotificationFindUniqueFn<Client>>>>;
+  attachmentFileModel: NonNullable<PromiseResolved<FnReturn<AttachmentFileFindUniqueFn<Client>>>>;
+  notificationAttachmentModel: ArrayItem<
+    PromiseResolved<FnReturn<NotificationAttachmentFindManyFn<Client>>>
+  >;
+};
+
+interface NotificationPrismaDelegates<
+  NotificationIdType,
+  UserIdType,
+  DelegateTypes extends NotificationPrismaDelegateTypes<NotificationIdType, UserIdType>,
+> {
   notification: {
-    findMany(args?: {
-      where?: PrismaNotificationWhereInput<NotificationIdType, UserIdType>;
-      orderBy?: PrismaOrderBy;
-      skip?: number;
-      take?: number;
-      include?: {
-        user?: boolean;
-        attachments?: boolean | { include: { attachmentFile: boolean } };
-      };
-    }): Promise<PrismaNotificationModel<NotificationIdType, UserIdType>[]>;
-    create(args: {
-      data: PrismaNotificationCreateData<UserIdType>;
-      include?: {
-        user?: boolean;
-        attachments?: boolean | { include: { attachmentFile: boolean } };
-      };
-    }): Promise<PrismaNotificationModel<NotificationIdType, UserIdType>>;
-    createManyAndReturn(args: {
-      data: PrismaNotificationCreateData<UserIdType>[];
-    }): Promise<PrismaNotificationModel<NotificationIdType, UserIdType>[]>;
-    update(args: {
-      where: { id: NotificationIdType };
-      data: BaseNotificationUpdateInput<UserIdType>;
-      include?: {
-        user?: boolean;
-        attachments?: boolean | { include: { attachmentFile: boolean } };
-      };
-    }): Promise<PrismaNotificationModel<NotificationIdType, UserIdType>>;
-    findUnique(args: {
-      where: { id: NotificationIdType };
-      include?: {
-        user?: boolean;
-        attachments?: boolean | { include: { attachmentFile: boolean } };
-      };
-    }): Promise<PrismaNotificationModel<NotificationIdType, UserIdType> | null>;
+    findMany(
+      args?: DelegateTypes['notificationFindManyArgs'],
+    ): Promise<DelegateTypes['notificationModel'][]>;
+    create(
+      args: DelegateTypes['notificationCreateArgs'],
+    ): Promise<DelegateTypes['notificationModel']>;
+    createManyAndReturn(
+      args: DelegateTypes['notificationCreateManyAndReturnArgs'],
+    ): Promise<DelegateTypes['notificationModel'][]>;
+    update(
+      args: DelegateTypes['notificationUpdateArgs'],
+    ): Promise<DelegateTypes['notificationModel']>;
+    findUnique(
+      args: DelegateTypes['notificationFindUniqueArgs'],
+    ): Promise<DelegateTypes['notificationModel'] | null>;
   };
   attachmentFile: {
-    findUnique(args: {
-      where: { id: string } | { checksum: string };
-    }): Promise<PrismaAttachmentFileModel | null>;
-    create(args: {
-      data: {
-        id?: string;
-        filename: string;
-        contentType: string;
-        size: number;
-        checksum: string;
-        storageIdentifiers: InputJsonValue;
-      };
-    }): Promise<PrismaAttachmentFileModel>;
-    delete(args: { where: { id: string } }): Promise<PrismaAttachmentFileModel>;
-    findMany(args?: {
-      where?: {
-        notificationAttachments?: { none: object };
-        createdAt?: { lt: Date };
-      };
-    }): Promise<PrismaAttachmentFileModel[]>;
+    findUnique(
+      args: DelegateTypes['attachmentFileFindUniqueArgs'],
+    ): Promise<DelegateTypes['attachmentFileModel'] | null>;
+    create(
+      args: DelegateTypes['attachmentFileCreateArgs'],
+    ): Promise<DelegateTypes['attachmentFileModel']>;
+    delete(
+      args: DelegateTypes['attachmentFileDeleteArgs'],
+    ): Promise<DelegateTypes['attachmentFileModel']>;
+    findMany(
+      args?: DelegateTypes['attachmentFileFindManyArgs'],
+    ): Promise<DelegateTypes['attachmentFileModel'][]>;
   };
   notificationAttachment: {
-    findMany(args: {
-      where: {
-        notificationId: NotificationIdType;
-      };
-      include?: { attachmentFile: boolean };
-    }): Promise<PrismaNotificationAttachmentModel[]>;
-    delete(args: { where: { id: string } }): Promise<PrismaNotificationAttachmentModel>;
-    deleteMany(args: {
-      where: {
-        id: string;
-        notificationId: NotificationIdType;
-      };
-    }): Promise<{ count: number }>;
-    create(args: {
-      data: {
-        id?: string;
-        notificationId: NotificationIdType;
-        fileId: string;
-        description?: string | null;
-      };
-    }): Promise<PrismaNotificationAttachmentModel>;
+    findMany(
+      args: DelegateTypes['notificationAttachmentFindManyArgs'],
+    ): Promise<DelegateTypes['notificationAttachmentModel'][]>;
+    delete(
+      args: DelegateTypes['notificationAttachmentDeleteArgs'],
+    ): Promise<DelegateTypes['notificationAttachmentModel']>;
+    deleteMany(args: DelegateTypes['notificationAttachmentDeleteManyArgs']): Promise<{
+      count: number;
+    }>;
+    create(
+      args: DelegateTypes['notificationAttachmentCreateArgs'],
+    ): Promise<DelegateTypes['notificationAttachmentModel']>;
   };
 }
 
-type AwaitedTuple<T extends readonly unknown[]> = {
-  [K in keyof T]: Awaited<T[K]>;
-};
-
-type PrismaTransactionOptions<TransactionIsolationLevel extends string> = {
+type PrismaInteractiveTransactionOptions<TransactionIsolationLevel extends string> = {
   maxWait?: number;
   timeout?: number;
   isolationLevel?: TransactionIsolationLevel;
 };
 
-export interface NotificationPrismaTransactionClientInterface<NotificationIdType, UserIdType>
-  extends NotificationPrismaDelegates<NotificationIdType, UserIdType> {}
+export interface NotificationPrismaTransactionClientInterface<
+  NotificationIdType,
+  UserIdType,
+  DelegateTypes extends NotificationPrismaDelegateTypes<NotificationIdType, UserIdType>,
+> extends NotificationPrismaDelegates<NotificationIdType, UserIdType, DelegateTypes> {}
 
 export interface NotificationPrismaClientInterface<
   NotificationIdType,
   UserIdType,
-  TransactionIsolationLevel extends string,
+  TransactionRunner extends (...args: readonly unknown[]) => Promise<unknown>,
+  // biome-ignore lint/correctness/noUnusedVariables: Delegate types are used for typing the transaction client interface and come from consumer-generated Prisma client types.
+  DelegateTypes extends NotificationPrismaDelegateTypes<NotificationIdType, UserIdType>,
 > {
-  $transaction: {
-    <P extends readonly PromiseLike<unknown>[]>(
-      arg: [...P],
-      options?: PrismaTransactionOptions<TransactionIsolationLevel>,
-    ): Promise<AwaitedTuple<P>>;
-    <R>(
-      fn: (
-        prisma: NotificationPrismaTransactionClientInterface<NotificationIdType, UserIdType>,
-      ) => Promise<R>,
-      options?: PrismaTransactionOptions<TransactionIsolationLevel>,
-    ): Promise<R>;
-  };
+  $transaction: TransactionRunner;
 }
 
 export interface NotificationPrismaClientInterface<
   NotificationIdType,
   UserIdType,
-  // biome-ignore lint/correctness/noUnusedVariables: This is an interface that will be implemented by the actual Prisma client, so we need to include the $transaction method signature here for type compatibility, even if it's not used directly in our code.
-  TransactionIsolationLevel extends string,
-> extends NotificationPrismaDelegates<NotificationIdType, UserIdType> {}
+  // biome-ignore lint/correctness/noUnusedVariables: Transaction runner type comes from consumer-generated Prisma client types.
+  TransactionRunner extends (...args: readonly unknown[]) => Promise<unknown>,
+  DelegateTypes extends NotificationPrismaDelegateTypes<NotificationIdType, UserIdType>,
+> extends NotificationPrismaDelegates<NotificationIdType, UserIdType, DelegateTypes> {}
 
 type InteractiveTransactionRunner<
   NotificationIdType,
   UserIdType,
   TransactionIsolationLevel extends string,
-> = {
-  <P extends readonly PromiseLike<unknown>[]>(
-    arg: [...P],
-    options?: PrismaTransactionOptions<TransactionIsolationLevel>,
-  ): Promise<AwaitedTuple<P>>;
-  <R>(
-    fn: (
-      prisma: NotificationPrismaTransactionClientInterface<NotificationIdType, UserIdType>,
-    ) => Promise<R>,
-    options?: PrismaTransactionOptions<TransactionIsolationLevel>,
-  ): Promise<R>;
-};
+  DelegateTypes extends NotificationPrismaDelegateTypes<NotificationIdType, UserIdType>,
+> = <R>(
+  fn: (
+    prisma: NotificationPrismaTransactionClientInterface<
+      NotificationIdType,
+      UserIdType,
+      DelegateTypes
+    >,
+  ) => Promise<R>,
+  options?: PrismaInteractiveTransactionOptions<TransactionIsolationLevel>,
+) => Promise<R>;
 
 // cause typescript not to expand types and preserve names
 type NoExpand<T> = T extends unknown ? T : never;
@@ -375,10 +462,16 @@ export class PrismaNotificationBackend<
   Client extends NotificationPrismaClientInterface<
     Config['NotificationIdType'],
     Config['UserIdType'],
-    TransactionIsolationLevel
+    TransactionRunner,
+    DelegateTypes
   >,
   Config extends BaseNotificationTypeConfig,
   TransactionIsolationLevel extends string,
+  TransactionRunner extends (...args: readonly unknown[]) => Promise<unknown>,
+  DelegateTypes extends NotificationPrismaDelegateTypes<
+    Config['NotificationIdType'],
+    Config['UserIdType']
+  >,
 > implements BaseNotificationBackend<Config>
 {
   private logger?: BaseLogger;
@@ -422,7 +515,7 @@ export class PrismaNotificationBackend<
    * Build a where clause for status-based updates
    */
   private buildStatusWhere(
-    id: NonNullable<Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>>['id'],
+    id: Config['NotificationIdType'],
     opts: { checkStatus?: NotificationStatus } = {},
   ) {
     const where: {
@@ -569,9 +662,7 @@ export class PrismaNotificationBackend<
    * based on whether it has a userId or not (internal implementation)
    */
   private serializeAnyNotification(
-    notification: NonNullable<
-      Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
-    >,
+    notification: DelegateTypes['notificationModel'],
   ): AnyDatabaseNotification<Config> {
     const baseData = {
       id: notification.id,
@@ -604,7 +695,9 @@ export class PrismaNotificationBackend<
       // Serialize attachments if present and attachmentManager is available
       attachments:
         notification.attachments && this.attachmentManager
-          ? notification.attachments.map((att) => this.serializeStoredAttachment(att))
+          ? notification.attachments.map((att: PrismaNotificationAttachmentModel) =>
+              this.serializeStoredAttachment(att),
+            )
           : undefined,
     };
 
@@ -633,9 +726,7 @@ export class PrismaNotificationBackend<
    * Serialize a Prisma notification model to DatabaseNotification
    */
   private serializeRegularNotification(
-    notification: NonNullable<
-      Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
-    >,
+    notification: DelegateTypes['notificationModel'],
   ): DatabaseNotification<Config> {
     return this.serializeAnyNotification(notification) as DatabaseNotification<Config>;
   }
@@ -644,9 +735,7 @@ export class PrismaNotificationBackend<
    * Serialize a Prisma notification model to DatabaseOneOffNotification
    */
   private serializeOneOffNotification(
-    notification: NonNullable<
-      Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
-    >,
+    notification: DelegateTypes['notificationModel'],
   ): DatabaseOneOffNotification<Config> {
     return this.serializeAnyNotification(notification) as DatabaseOneOffNotification<Config>;
   }
@@ -656,9 +745,7 @@ export class PrismaNotificationBackend<
    * @internal
    */
   serializeNotification(
-    notification: NonNullable<
-      Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
-    >,
+    notification: DelegateTypes['notificationModel'],
   ): AnyDatabaseNotification<Config> {
     return this.serializeAnyNotification(notification);
   }
@@ -892,7 +979,8 @@ export class PrismaNotificationBackend<
   private async getOrCreateFileRecordForUploadInTransaction(
     tx: NotificationPrismaTransactionClientInterface<
       Config['NotificationIdType'],
-      Config['UserIdType']
+      Config['UserIdType'],
+      DelegateTypes
     >,
     att: Extract<NotificationAttachment, { file: unknown }>,
   ): Promise<AttachmentFileRecord> {
@@ -926,7 +1014,8 @@ export class PrismaNotificationBackend<
   private async createNotificationAttachmentLinkInTransaction(
     tx: NotificationPrismaTransactionClientInterface<
       Config['NotificationIdType'],
-      Config['UserIdType']
+      Config['UserIdType'],
+      DelegateTypes
     >,
     notificationId: Config['NotificationIdType'],
     fileId: string,
@@ -948,7 +1037,8 @@ export class PrismaNotificationBackend<
   private async getAttachmentFileInTransaction(
     tx: NotificationPrismaTransactionClientInterface<
       Config['NotificationIdType'],
-      Config['UserIdType']
+      Config['UserIdType'],
+      DelegateTypes
     >,
     fileId: string,
   ): Promise<AttachmentFileRecord | null> {
@@ -968,7 +1058,8 @@ export class PrismaNotificationBackend<
   private async findAttachmentFileByChecksumInTransaction(
     tx: NotificationPrismaTransactionClientInterface<
       Config['NotificationIdType'],
-      Config['UserIdType']
+      Config['UserIdType'],
+      DelegateTypes
     >,
     checksum: string,
   ): Promise<AttachmentFileRecord | null> {
@@ -1053,14 +1144,16 @@ export class PrismaNotificationBackend<
     fn: (
       tx: NotificationPrismaTransactionClientInterface<
         Config['NotificationIdType'],
-        Config['UserIdType']
+        Config['UserIdType'],
+        DelegateTypes
       >,
     ) => Promise<R>,
   ): Promise<R> {
     const transactionRunner = this.prismaClient.$transaction as InteractiveTransactionRunner<
       Config['NotificationIdType'],
       Config['UserIdType'],
-      TransactionIsolationLevel
+      TransactionIsolationLevel,
+      DelegateTypes
     >;
 
     return transactionRunner(fn);
@@ -1699,7 +1792,8 @@ export class PrismaNotificationBackend<
   private async processAndStoreAttachmentsInTransaction(
     tx: NotificationPrismaTransactionClientInterface<
       Config['NotificationIdType'],
-      Config['UserIdType']
+      Config['UserIdType'],
+      DelegateTypes
     >,
     notificationId: Config['NotificationIdType'],
     attachments: NotificationAttachment[],
@@ -1788,18 +1882,26 @@ export class PrismaNotificationBackend<
 export class PrismaNotificationBackendFactory<
   Config extends BaseNotificationTypeConfig,
   TransactionIsolationLevel extends string,
+  TransactionRunner extends (...args: readonly unknown[]) => Promise<unknown>,
+  DelegateTypes extends NotificationPrismaDelegateTypes<
+    Config['NotificationIdType'],
+    Config['UserIdType']
+  >,
 > {
   create<
     Client extends NotificationPrismaClientInterface<
       Config['NotificationIdType'],
       Config['UserIdType'],
-      TransactionIsolationLevel
+      TransactionRunner,
+      DelegateTypes
     >,
   >(prismaClient: Client, attachmentManager?: BaseAttachmentManager, identifier?: string) {
-    return new PrismaNotificationBackend<Client, Config, TransactionIsolationLevel>(
-      prismaClient,
-      attachmentManager,
-      identifier,
-    );
+    return new PrismaNotificationBackend<
+      Client,
+      Config,
+      TransactionIsolationLevel,
+      TransactionRunner,
+      DelegateTypes
+    >(prismaClient, attachmentManager, identifier);
   }
 }
