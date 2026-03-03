@@ -144,10 +144,15 @@ type PrismaNotificationWhereInput<NotificationIdType, UserIdType> = {
   sentAt?: PrismaDateRangeFilter;
 };
 
-export interface NotificationPrismaClientInterface<NotificationIdType, UserIdType> {
-  $transaction<R>(
-    fn: (prisma: NotificationPrismaClientInterface<NotificationIdType, UserIdType>) => Promise<R>,
-  ): Promise<R>;
+type AwaitedTuple<T extends readonly unknown[]> = {
+  [K in keyof T]: Awaited<T[K]>;
+};
+
+type PrismaTransactionOptions = {
+  isolationLevel?: unknown;
+};
+
+interface NotificationPrismaDelegates<NotificationIdType, UserIdType> {
   notification: {
     findMany(args?: {
       where?: PrismaNotificationWhereInput<NotificationIdType, UserIdType>;
@@ -231,6 +236,27 @@ export interface NotificationPrismaClientInterface<NotificationIdType, UserIdTyp
     }): Promise<PrismaNotificationAttachmentModel>;
   };
 }
+
+export interface NotificationPrismaTransactionClientInterface<NotificationIdType, UserIdType>
+  extends NotificationPrismaDelegates<NotificationIdType, UserIdType> {}
+
+export interface NotificationPrismaClientInterface<NotificationIdType, UserIdType> {
+  $transaction: {
+    <R>(
+      fn: (
+        prisma: NotificationPrismaTransactionClientInterface<NotificationIdType, UserIdType>,
+      ) => Promise<R>,
+      options?: PrismaTransactionOptions,
+    ): Promise<R>;
+    <P extends readonly unknown[]>(
+      arg: [...P],
+      options?: PrismaTransactionOptions,
+    ): Promise<AwaitedTuple<P>>;
+  };
+}
+
+export interface NotificationPrismaClientInterface<NotificationIdType, UserIdType>
+  extends NotificationPrismaDelegates<NotificationIdType, UserIdType> {}
 
 // cause typescript not to expand types and preserve names
 type NoExpand<T> = T extends unknown ? T : never;
@@ -835,7 +861,10 @@ export class PrismaNotificationBackend<
    * @private
    */
   private async getOrCreateFileRecordForUploadInTransaction(
-    tx: NotificationPrismaClientInterface<Config['NotificationIdType'], Config['UserIdType']>,
+    tx: NotificationPrismaTransactionClientInterface<
+      Config['NotificationIdType'],
+      Config['UserIdType']
+    >,
     att: Extract<NotificationAttachment, { file: unknown }>,
   ): Promise<AttachmentFileRecord> {
     const manager = this.getAttachmentManager();
@@ -866,7 +895,10 @@ export class PrismaNotificationBackend<
    * @private`
    */
   private async createNotificationAttachmentLinkInTransaction(
-    tx: NotificationPrismaClientInterface<Config['NotificationIdType'], Config['UserIdType']>,
+    tx: NotificationPrismaTransactionClientInterface<
+      Config['NotificationIdType'],
+      Config['UserIdType']
+    >,
     notificationId: Config['NotificationIdType'],
     fileId: string,
     description?: string | null,
@@ -885,7 +917,10 @@ export class PrismaNotificationBackend<
    * @private
    */
   private async getAttachmentFileInTransaction(
-    tx: NotificationPrismaClientInterface<Config['NotificationIdType'], Config['UserIdType']>,
+    tx: NotificationPrismaTransactionClientInterface<
+      Config['NotificationIdType'],
+      Config['UserIdType']
+    >,
     fileId: string,
   ): Promise<AttachmentFileRecord | null> {
     const file = await tx.attachmentFile.findUnique({
@@ -902,7 +937,10 @@ export class PrismaNotificationBackend<
    * @private
    */
   private async findAttachmentFileByChecksumInTransaction(
-    tx: NotificationPrismaClientInterface<Config['NotificationIdType'], Config['UserIdType']>,
+    tx: NotificationPrismaTransactionClientInterface<
+      Config['NotificationIdType'],
+      Config['UserIdType']
+    >,
     checksum: string,
   ): Promise<AttachmentFileRecord | null> {
     const file = await tx.attachmentFile.findUnique({
@@ -1613,7 +1651,10 @@ export class PrismaNotificationBackend<
    * @private
    */
   private async processAndStoreAttachmentsInTransaction(
-    tx: NotificationPrismaClientInterface<Config['NotificationIdType'], Config['UserIdType']>,
+    tx: NotificationPrismaTransactionClientInterface<
+      Config['NotificationIdType'],
+      Config['UserIdType']
+    >,
     notificationId: Config['NotificationIdType'],
     attachments: NotificationAttachment[],
   ): Promise<void> {

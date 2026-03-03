@@ -4,7 +4,7 @@ import type {
   NotificationFilter,
   NotificationOrderBy,
 } from 'vintasend';
-import { type Mock, type Mocked, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, type Mocked, vi } from 'vitest';
 import { PrismaNotificationBackendFactory } from '../index';
 import type {
   NotificationPrismaClientInterface,
@@ -905,8 +905,9 @@ describe('PrismaNotificationBackend', () => {
       const createMock = mockPrismaClient.notification.create as Mock;
       createMock.mockResolvedValue(invalidInput);
 
-      // @ts-expect-error - testing invalid input
-      await expect(backend.persistNotification(invalidInput)).rejects.toThrow('Invalid JSON value');
+      await expect(backend.persistNotification(invalidInput as any)).rejects.toThrow(
+        'Invalid JSON value',
+      );
     });
   });
 
@@ -1088,8 +1089,9 @@ describe('PrismaNotificationBackend', () => {
       const createMock = mockPrismaClient.notification.create as Mock;
       createMock.mockResolvedValue(invalidInput);
 
-      // @ts-expect-error - testing invalid input
-      await expect(backend.persistNotification(invalidInput)).rejects.toThrow('Invalid JSON value');
+      await expect(backend.persistNotification(invalidInput as any)).rejects.toThrow(
+        'Invalid JSON value',
+      );
     });
 
     it('should handle missing user email in getUserEmailFromNotification', async () => {
