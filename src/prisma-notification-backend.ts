@@ -234,7 +234,9 @@ type AwaitedTuple<T extends readonly unknown[]> = {
 };
 
 type PrismaTransactionOptions = {
-  isolationLevel?: unknown;
+  maxWait?: number;
+  timeout?: number;
+  isolationLevel?: string;
 };
 
 export interface NotificationPrismaTransactionClientInterface<NotificationIdType, UserIdType>
