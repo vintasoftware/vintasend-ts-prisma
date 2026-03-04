@@ -1,6 +1,6 @@
 {
   "name": "vintasend-prisma",
-  "version": "0.12.3",
+  "version": "0.13.0",
   "description": "VintaSend Backend implementation for Prisma",
   "type": "module",
   "main": "dist/index.js",
@@ -22,7 +22,7 @@
   "dependencies": {
     "@prisma/client": "^7.4.2",
     "prisma": "^7.4.2",
-    "vintasend": "^0.12.3"
+    "vintasend": "file:../../.."
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.5",
