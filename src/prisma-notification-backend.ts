@@ -55,6 +55,7 @@ export interface PrismaNotificationModel<IdType, UserId> {
   status: NotificationStatus;
   contextUsed: JsonValue | null;
   extraParams: JsonValue | null;
+  tenant: string | null;
   adapterUsed: string | null;
   sentAt: Date | null;
   readAt: Date | null;
@@ -139,6 +140,7 @@ type PrismaNotificationWhereInput<NotificationIdType, UserIdType> = {
   bodyTemplate?: string | PrismaStringFilter;
   subjectTemplate?: string | PrismaStringFilter;
   contextName?: string | PrismaStringFilter;
+  tenant?: string | { in: string[] };
   createdAt?: PrismaDateRangeFilter;
   sentAt?: PrismaDateRangeFilter;
 };
@@ -419,6 +421,7 @@ export interface BaseNotificationCreateInput<_UserIdType, NotificationIdType = u
   status?: NotificationStatus;
   contextUsed?: InputJsonValue;
   extraParams?: InputJsonValue;
+  tenant?: string | null;
   adapterUsed?: string | null;
   sentAt?: Date | null;
   readAt?: Date | null;
@@ -457,6 +460,7 @@ export interface BaseNotificationUpdateInput<UserIdType> {
   status?: NotificationStatus;
   contextUsed?: InputJsonValue;
   extraParams?: InputJsonValue;
+  tenant?: string | null;
   adapterUsed?: string | null;
   sentAt?: Date | null;
   readAt?: Date | null;
@@ -640,6 +644,10 @@ export class PrismaNotificationBackend<
       where.contextName = this.stringFilterLookupToPrismaWhere(filter.contextName);
     }
 
+    if (filter.tenant !== undefined) {
+      where.tenant = Array.isArray(filter.tenant) ? { in: filter.tenant } : filter.tenant;
+    }
+
     if (filter.sendAfterRange) {
       const sendAfterFilter: PrismaDateRangeFilter = {};
       if (filter.sendAfterRange.from) {
@@ -717,6 +725,7 @@ export class PrismaNotificationBackend<
       extraParams: notification.extraParams
         ? convertJsonValueToRecord(notification.extraParams)
         : null,
+      tenant: notification.tenant,
       adapterUsed: notification.adapterUsed,
       sentAt: notification.sentAt,
       readAt: notification.readAt,
@@ -814,6 +823,7 @@ export class PrismaNotificationBackend<
       sendAfter: notification.sendAfter,
       subjectTemplate: notification.subjectTemplate,
       extraParams: notification.extraParams as InputJsonValue,
+      tenant: notification.tenant ?? null,
       gitCommitSha:
         'gitCommitSha' in notification && notification.gitCommitSha !== undefined
           ? (notification.gitCommitSha as string | null)
@@ -941,6 +951,9 @@ export class PrismaNotificationBackend<
     if (notification.extraParams !== undefined) {
       data.extraParams = notification.extraParams as InputJsonValue;
     }
+    // Note: tenant is intentionally not included in updates.
+    // Tenant reassignment is rejected by assertTenantUnchanged to prevent
+    // data leaks across tenant boundaries.
     if (notification.adapterUsed !== undefined) {
       data.adapterUsed = notification.adapterUsed;
     }
@@ -998,6 +1011,7 @@ export class PrismaNotificationBackend<
     if (notification.extraParams !== undefined) {
       data.extraParams = notification.extraParams as InputJsonValue;
     }
+    // Note: tenant is intentionally not included in updates. See buildUpdateData.
 
     return data;
   }
@@ -1224,6 +1238,7 @@ export class PrismaNotificationBackend<
       ...(notificationWithOptionalGitCommitSha.gitCommitSha !== undefined
         ? { gitCommitSha: notificationWithOptionalGitCommitSha.gitCommitSha }
         : {}),
+      // Note: tenant is intentionally omitted. See assertTenantUnchanged.
     } as Partial<BaseNotificationUpdateInput<Config['UserIdType']>>;
   }
 
@@ -1362,6 +1377,7 @@ export class PrismaNotificationBackend<
     >['id'],
     notification: Partial<Omit<DatabaseNotification<Config>, 'id'>>,
   ): Promise<DatabaseNotification<Config>> {
+    await this.assertTenantUnchanged(notificationId, notification);
     const updated = await this.prismaClient.notification.update({
       where: {
         id: notificationId,
@@ -1370,6 +1386,31 @@ export class PrismaNotificationBackend<
     });
 
     return this.serializeRegularNotification(updated);
+  }
+
+  /**
+   * Guard against tenant reassignment on update. Changing a notification's
+   * tenant could leak data across tenant boundaries, so we reject any update
+   * that attempts to change the tenant. Idempotent updates (same tenant, or
+   * no tenant field) are allowed so service-layer replication code that
+   * spreads the full notification still works.
+   */
+  private async assertTenantUnchanged(
+    notificationId: Config['NotificationIdType'],
+    notification: Partial<Record<string, unknown>>,
+  ): Promise<void> {
+    if (!('tenant' in notification)) return;
+    const existing = await this.prismaClient.notification.findUnique({
+      where: { id: notificationId },
+    });
+    const current = (existing as { tenant?: string | null } | null)?.tenant ?? null;
+    const incoming = (notification.tenant as string | null | undefined) ?? null;
+    if (incoming !== current) {
+      throw new Error(
+        `Cannot update tenant of notification ${String(notificationId)}: ` +
+          `tenant reassignment is not allowed (existing=${current ?? 'null'}, incoming=${incoming ?? 'null'}).`,
+      );
+    }
   }
 
   async applyReplicationSnapshotIfNewer(
@@ -1471,6 +1512,7 @@ export class PrismaNotificationBackend<
     >['id'],
     notification: Partial<Omit<OneOffNotificationInput<Config>, 'id'>>,
   ): Promise<DatabaseOneOffNotification<Config>> {
+    await this.assertTenantUnchanged(notificationId as Config['NotificationIdType'], notification);
     const updated = await this.prismaClient.notification.update({
       where: { id: notificationId as Config['NotificationIdType'] },
       data: this.buildOneOffInputUpdateData(notification),

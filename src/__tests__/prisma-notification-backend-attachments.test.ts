@@ -61,6 +61,7 @@ describe('PrismaNotificationBackend - Attachments', () => {
     status: NotificationStatusEnum.PENDING_SEND,
     contextUsed: null,
     extraParams: null,
+    tenant: null,
     adapterUsed: null,
     gitCommitSha: null,
     sentAt: null,
