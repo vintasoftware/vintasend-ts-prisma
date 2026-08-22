@@ -225,3 +225,77 @@ describe('filtering', () => {
     expect(capabilities['negation.usedTemplateVersion']).toBe(true);
   });
 });
+
+describe('the capability report matches the behaviour', () => {
+  /** A filter value that makes sense for each field this backend can claim. */
+  const SAMPLE: Record<string, unknown> = {
+    status: 'SENT',
+    notificationType: 'EMAIL',
+    adapterUsed: 'nodemailer',
+    userId: 'user1',
+    bodyTemplate: 'welcome',
+    subjectTemplate: 'subject',
+    contextName: 'testContext',
+    tenant: 't1',
+    requestedTemplateVersion: 3,
+    usedTemplateVersion: 3,
+    sendAfterRange: { from: new Date('2026-01-01'), to: new Date('2026-12-31') },
+    createdAtRange: { from: new Date('2026-01-01'), to: new Date('2026-12-31') },
+    sentAtRange: { from: new Date('2026-01-01'), to: new Date('2026-12-31') },
+    readAtRange: { from: new Date('2026-01-01'), to: new Date('2026-12-31') },
+  };
+
+  async function whereClauseFor(filter: NotificationFilter<any>) {
+    prisma.notification.findMany.mockClear();
+    await backend.filterNotifications(filter, 0, 10);
+    const call = prisma.notification.findMany.mock.calls[0]?.[0] as { where: unknown } | undefined;
+    return call?.where as Record<string, unknown> | undefined;
+  }
+
+  it('produces a where clause for every field it declares filterable', async () => {
+    // A declared field that translated to nothing would return the whole table while the caller
+    // believed it had narrowed — the failure the capability report exists to prevent.
+    const capabilities = backend.getFilterCapabilities();
+    const broken: string[] = [];
+
+    for (const [key, declared] of Object.entries(capabilities)) {
+      if (!declared || !key.startsWith('fields.')) continue;
+      const field = key.slice('fields.'.length);
+      const sample = SAMPLE[field];
+      if (sample === undefined) continue;
+      try {
+        const where = await whereClauseFor({ [field]: sample } as never);
+        const column = field.replace(/Range$/, '');
+        if (where === undefined || !(column in where)) {
+          broken.push(`${key}: produced ${JSON.stringify(where)}`);
+        }
+      } catch (error) {
+        broken.push(`${key}: threw ${(error as Error).message}`);
+      }
+    }
+
+    expect(broken).toEqual([]);
+  });
+
+  it('produces a NOT clause for every negation it declares', async () => {
+    const capabilities = backend.getFilterCapabilities();
+    const broken: string[] = [];
+
+    for (const [key, declared] of Object.entries(capabilities)) {
+      if (!declared || !key.startsWith('negation.')) continue;
+      const field = key.slice('negation.'.length);
+      const sample = SAMPLE[field];
+      if (sample === undefined) continue;
+      try {
+        const where = await whereClauseFor({ not: { [field]: sample } } as never);
+        if (where === undefined || !('NOT' in where)) {
+          broken.push(`${key}: produced ${JSON.stringify(where)}`);
+        }
+      } catch (error) {
+        broken.push(`${key}: threw ${(error as Error).message}`);
+      }
+    }
+
+    expect(broken).toEqual([]);
+  });
+});
