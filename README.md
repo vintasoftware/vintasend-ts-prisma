@@ -72,6 +72,32 @@ The backend created by the factory supports methods like:
 
 These methods are intended to be used through your VintaSend service, but can also be called directly when needed.
 
+## Template versions
+
+The backend stores the two fields VintaSend uses for
+[template version pinning](https://github.com/vintasoftware/vintasend-ts#template-version-pinning),
+so your `Notification` model needs two nullable integer columns:
+
+```prisma
+model Notification {
+  // ...
+  requestedTemplateVersion Int? // which version to render; null means "whatever is current"
+  usedTemplateVersion      Int? // which version actually rendered, written at send time
+}
+```
+
+Both are nullable and stay null with a renderer whose templates are not versioned, which is every
+file-based one. Add them and nothing else changes; leave them off and Prisma rejects the write, so
+this is the one part of the feature that is not opt-in for this backend.
+
+`requestedTemplateVersion` is settable through create and update. `usedTemplateVersion` is written
+only by `storeTemplateVersion`, which the service calls at send time. Both are filterable, by a
+single version or a list:
+
+```typescript
+await service.filterNotifications({ usedTemplateVersion: [1, 2] }, 0, 20);
+```
+
 ## Notes
 
 - This package does **not** assume a concrete Prisma client at build time.

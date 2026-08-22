@@ -1528,21 +1528,24 @@ describe('PrismaNotificationBackend', () => {
       { field: 'createdAt', direction: 'desc' },
       { field: 'updatedAt', direction: 'asc' },
       { field: 'updatedAt', direction: 'desc' },
-    ] as NotificationOrderBy[])('should map orderBy $field $direction into prisma findMany', async (orderBy) => {
-      const findManyMock = mockPrismaClient.notification.findMany as Mock;
-      findManyMock.mockResolvedValue([mockNotification]);
+    ] as NotificationOrderBy[])(
+      'should map orderBy $field $direction into prisma findMany',
+      async (orderBy) => {
+        const findManyMock = mockPrismaClient.notification.findMany as Mock;
+        findManyMock.mockResolvedValue([mockNotification]);
 
-      await backend.filterNotifications({}, 1, 10, orderBy);
+        await backend.filterNotifications({}, 1, 10, orderBy);
 
-      expect(findManyMock).toHaveBeenCalledWith({
-        where: {},
-        orderBy: {
-          [orderBy.field]: orderBy.direction,
-        },
-        skip: 10,
-        take: 10,
-      });
-    });
+        expect(findManyMock).toHaveBeenCalledWith({
+          where: {},
+          orderBy: {
+            [orderBy.field]: orderBy.direction,
+          },
+          skip: 10,
+          take: 10,
+        });
+      },
+    );
   });
 
   describe('deserializeNotificationForUpdate', () => {

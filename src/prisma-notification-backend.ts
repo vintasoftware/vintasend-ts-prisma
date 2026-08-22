@@ -60,6 +60,10 @@ export interface PrismaNotificationModel<IdType, UserId> {
   sentAt: Date | null;
   readAt: Date | null;
   gitCommitSha: string | null;
+  // Which version of `bodyTemplate` this notification renders, and which one actually rendered
+  // it. Both nullable: a notification whose renderer does not version templates has neither.
+  requestedTemplateVersion: number | null;
+  usedTemplateVersion: number | null;
   createdAt: Date;
   updatedAt: Date;
   user?: {
@@ -134,7 +138,6 @@ type PrismaNotificationWhereInput<NotificationIdType, UserIdType> = {
   notificationType?: NotificationType | { in: NotificationType[] };
   sendAfter?: { gt: Date } | null | PrismaDateRangeFilter;
   userId?: UserIdType | null;
-  readAt?: null;
   emailOrPhone?: string | { not: null };
   adapterUsed?: string | { in: string[] };
   bodyTemplate?: string | PrismaStringFilter;
@@ -143,6 +146,9 @@ type PrismaNotificationWhereInput<NotificationIdType, UserIdType> = {
   tenant?: string | { in: string[] };
   createdAt?: PrismaDateRangeFilter;
   sentAt?: PrismaDateRangeFilter;
+  readAt?: null | PrismaDateRangeFilter;
+  requestedTemplateVersion?: number | { in: number[] };
+  usedTemplateVersion?: number | { in: number[] };
 };
 
 // biome-ignore lint/suspicious/noExplicitAny: This is a generic type for the Prisma client delegate types, which can vary greatly depending on the consumer's Prisma schema, so we allow any here.
@@ -426,6 +432,8 @@ export interface BaseNotificationCreateInput<_UserIdType, NotificationIdType = u
   sentAt?: Date | null;
   readAt?: Date | null;
   gitCommitSha?: string | null;
+  requestedTemplateVersion?: number | null;
+  usedTemplateVersion?: number | null;
   emailOrPhone?: string | null;
   firstName?: string | null;
   lastName?: string | null;
@@ -465,6 +473,8 @@ export interface BaseNotificationUpdateInput<UserIdType> {
   sentAt?: Date | null;
   readAt?: Date | null;
   gitCommitSha?: string | null;
+  requestedTemplateVersion?: number | null;
+  usedTemplateVersion?: number | null;
 }
 
 function convertJsonValueToRecord(jsonValue: JsonValue): Record<string, string | number | boolean> {
@@ -687,6 +697,31 @@ export class PrismaNotificationBackend<
       }
     }
 
+    if (filter.readAtRange) {
+      const readAtFilter: PrismaDateRangeFilter = {};
+      if (filter.readAtRange.from) {
+        readAtFilter.gte = filter.readAtRange.from;
+      }
+      if (filter.readAtRange.to) {
+        readAtFilter.lte = filter.readAtRange.to;
+      }
+      if (Object.keys(readAtFilter).length > 0) {
+        where.readAt = readAtFilter;
+      }
+    }
+
+    if (filter.requestedTemplateVersion !== undefined) {
+      where.requestedTemplateVersion = Array.isArray(filter.requestedTemplateVersion)
+        ? { in: filter.requestedTemplateVersion }
+        : filter.requestedTemplateVersion;
+    }
+
+    if (filter.usedTemplateVersion !== undefined) {
+      where.usedTemplateVersion = Array.isArray(filter.usedTemplateVersion)
+        ? { in: filter.usedTemplateVersion }
+        : filter.usedTemplateVersion;
+    }
+
     return where;
   }
 
@@ -730,6 +765,8 @@ export class PrismaNotificationBackend<
       sentAt: notification.sentAt,
       readAt: notification.readAt,
       gitCommitSha: notification.gitCommitSha,
+      requestedTemplateVersion: notification.requestedTemplateVersion,
+      usedTemplateVersion: notification.usedTemplateVersion,
       createdAt: notification.createdAt,
       updatedAt: notification.updatedAt,
       // Serialize attachments if present and attachmentManager is available
@@ -828,6 +865,9 @@ export class PrismaNotificationBackend<
         'gitCommitSha' in notification && notification.gitCommitSha !== undefined
           ? (notification.gitCommitSha as string | null)
           : null,
+      // Only carried when the service resolved a pin. Absent means "whatever is current at send
+      // time", which is the column's default.
+      requestedTemplateVersion: notification.requestedTemplateVersion ?? null,
       // Only include one-off fields if this is actually a one-off notification
       ...(isOneOff && {
         emailOrPhone: notificationWithOneOffFields.emailOrPhone ?? null,
@@ -966,6 +1006,10 @@ export class PrismaNotificationBackend<
     if (notification.gitCommitSha !== undefined) {
       data.gitCommitSha = notification.gitCommitSha;
     }
+    if (notification.requestedTemplateVersion !== undefined) {
+      data.requestedTemplateVersion = notification.requestedTemplateVersion;
+    }
+    // usedTemplateVersion is deliberately absent: it is written only by storeTemplateVersion.
 
     return data;
   }
@@ -1011,7 +1055,11 @@ export class PrismaNotificationBackend<
     if (notification.extraParams !== undefined) {
       data.extraParams = notification.extraParams as InputJsonValue;
     }
+    if (notification.requestedTemplateVersion !== undefined) {
+      data.requestedTemplateVersion = notification.requestedTemplateVersion;
+    }
     // Note: tenant is intentionally not included in updates. See buildUpdateData.
+    // usedTemplateVersion is deliberately absent: it is written only by storeTemplateVersion.
 
     return data;
   }
@@ -1237,6 +1285,9 @@ export class PrismaNotificationBackend<
       ...(notification.subjectTemplate ? { subjectTemplate: notification.subjectTemplate } : {}),
       ...(notificationWithOptionalGitCommitSha.gitCommitSha !== undefined
         ? { gitCommitSha: notificationWithOptionalGitCommitSha.gitCommitSha }
+        : {}),
+      ...(notification.requestedTemplateVersion !== undefined
+        ? { requestedTemplateVersion: notification.requestedTemplateVersion }
         : {}),
       // Note: tenant is intentionally omitted. See assertTenantUnchanged.
     } as Partial<BaseNotificationUpdateInput<Config['UserIdType']>>;
@@ -1779,6 +1830,41 @@ export class PrismaNotificationBackend<
     await this.prismaClient.notification.update({
       where: { id: notificationId as Config['NotificationIdType'] },
       data: { contextUsed: context, adapterUsed: adapterKey },
+    });
+  }
+
+  /**
+   * What this backend can be asked to filter on, beyond the library defaults.
+   *
+   * Only the keys whose default is `false` need declaring: everything else defaults to supported,
+   * and Prisma translates the rest of the vocabulary directly. These three are new filter
+   * vocabulary that defaults to off precisely so a backend has to opt in — and this one has the
+   * columns and the `WHERE` clauses for all of them.
+   */
+  getFilterCapabilities(): Record<string, boolean> {
+    return {
+      'fields.readAtRange': true,
+      'negation.readAtRange': true,
+      'fields.requestedTemplateVersion': true,
+      'fields.usedTemplateVersion': true,
+      'negation.requestedTemplateVersion': true,
+      'negation.usedTemplateVersion': true,
+    };
+  }
+
+  /**
+   * Record which version of the template actually rendered this notification.
+   *
+   * The service only calls this when the renderer reported a version that differs from what is
+   * stored, so there is nothing to deduplicate here.
+   */
+  async storeTemplateVersion(
+    notificationId: Config['NotificationIdType'],
+    templateVersion: number,
+  ): Promise<void> {
+    await this.prismaClient.notification.update({
+      where: { id: notificationId },
+      data: { usedTemplateVersion: templateVersion },
     });
   }
 
