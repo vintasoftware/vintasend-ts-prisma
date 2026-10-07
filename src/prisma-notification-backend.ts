@@ -20,7 +20,7 @@ import type {
   StorageIdentifiers,
   StoredAttachment,
 } from 'vintasend';
-import { isAttachmentReference } from 'vintasend';
+import { isAttachmentReference, log, logCount, logId } from 'vintasend';
 
 export const NotificationStatusEnum = {
   PENDING_SEND: 'PENDING_SEND',
@@ -1182,12 +1182,12 @@ export class PrismaNotificationBackend<
 
     // If no attachments, skip transaction overhead
     if (!attachments || attachments.length === 0) {
-      this.logger?.info('Creating notification without attachments');
+      this.logger?.info(log`Creating notification without attachments`);
       const created = await this.prismaClient.notification.create({
         data: buildData(notificationData as TInput),
         include: notificationWithAttachmentsInclude,
       });
-      this.logger?.info(`Notification created successfully with ID: ${created.id}`);
+      this.logger?.info(log`Notification created successfully with ID: ${logId(created.id)}`);
       return serialize(created);
     }
 
@@ -1195,14 +1195,16 @@ export class PrismaNotificationBackend<
     this.getAttachmentManager();
 
     // Use transaction to ensure atomicity of notification + attachments
-    this.logger?.info(`Creating notification with ${attachments.length} attachment(s)`);
+    this.logger?.info(
+      log`Creating notification with ${logCount(attachments.length)} attachment(s)`,
+    );
     return await this.runInteractiveTransaction(async (tx) => {
       const created = await tx.notification.create({
         data: buildData(notificationData as TInput),
         include: notificationWithAttachmentsInclude,
       });
 
-      this.logger?.info(`Processing attachments for notification ID: ${created.id}`);
+      this.logger?.info(log`Processing attachments for notification ID: ${logId(created.id)}`);
       await this.processAndStoreAttachmentsInTransaction(tx, created.id, attachments);
 
       const withAttachments = await tx.notification.findUnique({
@@ -1215,7 +1217,7 @@ export class PrismaNotificationBackend<
       }
 
       this.logger?.info(
-        `Notification created successfully with ID: ${created.id} and ${attachments.length} attachment(s)`,
+        log`Notification created successfully with ID: ${logId(created.id)} and ${logCount(attachments.length)} attachment(s)`,
       );
       return serialize(withAttachments);
     });
@@ -1308,7 +1310,9 @@ export class PrismaNotificationBackend<
     page = 0,
     pageSize = 100,
   ): Promise<AnyDatabaseNotification<Config>[]> {
-    this.logger?.info(`Fetching pending notifications: page ${page}, pageSize ${pageSize}`);
+    this.logger?.info(
+      log`Fetching pending notifications: page ${logCount(page)}, pageSize ${logCount(pageSize)}`,
+    );
     const notifications = await this.prismaClient.notification.findMany({
       where: {
         status: NotificationStatusEnum.PENDING_SEND,
@@ -1318,7 +1322,7 @@ export class PrismaNotificationBackend<
       take: pageSize,
     });
 
-    this.logger?.info(`Found ${notifications.length} pending notification(s)`);
+    this.logger?.info(log`Found ${logCount(notifications.length)} pending notification(s)`);
     return notifications.map((n) => this.serializeAnyNotification(n));
   }
 
@@ -1624,7 +1628,7 @@ export class PrismaNotificationBackend<
     >['id'],
     checkIsPending = true,
   ): Promise<AnyDatabaseNotification<Config>> {
-    this.logger?.info(`Marking notification ${notificationId} as sent`);
+    this.logger?.info(log`Marking notification ${logId(notificationId)} as sent`);
     let updated: DelegateTypes['notificationModel'];
 
     try {
@@ -1648,7 +1652,7 @@ export class PrismaNotificationBackend<
 
       if (existing?.status === NotificationStatusEnum.SENT) {
         this.logger?.info(
-          `Notification ${notificationId} was already marked as sent by another worker`,
+          log`Notification ${logId(notificationId)} was already marked as sent by another worker`,
         );
         return this.serializeAnyNotification(existing);
       }
@@ -1656,7 +1660,7 @@ export class PrismaNotificationBackend<
       throw error;
     }
 
-    this.logger?.info(`Notification ${notificationId} marked as sent`);
+    this.logger?.info(log`Notification ${logId(notificationId)} marked as sent`);
     return this.serializeAnyNotification(updated);
   }
 
@@ -1666,7 +1670,7 @@ export class PrismaNotificationBackend<
     >['id'],
     checkIsPending = true,
   ): Promise<AnyDatabaseNotification<Config>> {
-    this.logger?.info(`Marking notification ${notificationId} as failed`);
+    this.logger?.info(log`Marking notification ${logId(notificationId)} as failed`);
     let updated: DelegateTypes['notificationModel'];
 
     try {
@@ -1690,7 +1694,7 @@ export class PrismaNotificationBackend<
 
       if (existing?.status === NotificationStatusEnum.FAILED) {
         this.logger?.info(
-          `Notification ${notificationId} was already marked as failed by another worker`,
+          log`Notification ${logId(notificationId)} was already marked as failed by another worker`,
         );
         return this.serializeAnyNotification(existing);
       }
@@ -1698,7 +1702,7 @@ export class PrismaNotificationBackend<
       throw error;
     }
 
-    this.logger?.info(`Notification ${notificationId} marked as failed`);
+    this.logger?.info(log`Notification ${logId(notificationId)} marked as failed`);
     return this.serializeAnyNotification(updated);
   }
 
@@ -1708,7 +1712,7 @@ export class PrismaNotificationBackend<
     >['id'],
     checkIsSent = true,
   ): Promise<DatabaseNotification<Config>> {
-    this.logger?.info(`Marking notification ${notificationId} as read`);
+    this.logger?.info(log`Marking notification ${logId(notificationId)} as read`);
     // First fetch to validate it's a regular notification
     const notification = await this.prismaClient.notification.findUnique({
       where: { id: notificationId as Config['NotificationIdType'] },
@@ -1732,7 +1736,7 @@ export class PrismaNotificationBackend<
       },
     });
 
-    this.logger?.info(`Notification ${notificationId} marked as read`);
+    this.logger?.info(log`Notification ${logId(notificationId)} marked as read`);
     return this.serializeRegularNotification(updated);
   }
 
@@ -1904,14 +1908,14 @@ export class PrismaNotificationBackend<
   }
 
   async deleteAttachmentFile(fileId: string): Promise<void> {
-    this.logger?.info(`Deleting attachment file: ${fileId}`);
+    this.logger?.info(log`Deleting attachment file: ${logId(fileId)}`);
     const file = await this.prismaClient.attachmentFile.findUnique({
       where: { id: fileId },
     });
 
     // If there's no DB record, there's nothing to delete
     if (!file) {
-      this.logger?.info(`Attachment file ${fileId} not found, nothing to delete`);
+      this.logger?.info(log`Attachment file ${logId(fileId)} not found, nothing to delete`);
       return;
     }
 
@@ -1924,7 +1928,7 @@ export class PrismaNotificationBackend<
     await this.prismaClient.attachmentFile.delete({
       where: { id: fileId },
     });
-    this.logger?.info(`Attachment file ${fileId} deleted successfully`);
+    this.logger?.info(log`Attachment file ${logId(fileId)} deleted successfully`);
   }
 
   async getOrphanedAttachmentFiles(): Promise<AttachmentFileRecord[]> {
@@ -2003,7 +2007,7 @@ export class PrismaNotificationBackend<
       if (isAttachmentReference(att)) {
         // Reference existing file - just create the notification link
         this.logger?.info(
-          `Linking existing attachment file ${att.fileId} to notification ${notificationId}`,
+          log`Linking existing attachment file ${logId(att.fileId)} to notification ${logId(notificationId)}`,
         );
         const fileRecord = await this.getAttachmentFileInTransaction(tx, att.fileId);
         if (!fileRecord) {
@@ -2017,7 +2021,9 @@ export class PrismaNotificationBackend<
         );
       } else {
         // Upload new file with deduplication
-        this.logger?.info(`Uploading new attachment file for notification ${notificationId}`);
+        this.logger?.info(
+          log`Uploading new attachment file for notification ${logId(notificationId)}`,
+        );
         const fileRecord = await this.getOrCreateFileRecordForUploadInTransaction(tx, att);
         await this.createNotificationAttachmentLinkInTransaction(
           tx,

@@ -4,6 +4,7 @@ import type {
   NotificationFilter,
   NotificationOrderBy,
 } from 'vintasend';
+import { isLogMessage, logMessageMatching, renderLogMessage } from 'vintasend';
 import { beforeEach, describe, expect, it, type Mock, type Mocked, vi } from 'vitest';
 import { PrismaNotificationBackendFactory } from '../index';
 import type {
@@ -1145,6 +1146,100 @@ describe('PrismaNotificationBackend', () => {
       const result = await backend.getUserEmailFromNotification('1');
 
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe('log safety', () => {
+    // Synthetic PHI, as a Prisma error would quote it from the failing query.
+    const syntheticPhi = ['Jane Synthetic', 'jane.synthetic@example.com', '1970-01-01'];
+
+    const makePrismaError = () =>
+      Object.assign(
+        new Error(
+          'Unique constraint failed: Jane Synthetic <jane.synthetic@example.com>, born 1970-01-01',
+        ),
+        {
+          name: 'PrismaClientKnownRequestError',
+          code: 'P2002',
+          meta: { target: ['emailOrPhone'], value: 'jane.synthetic@example.com' },
+        },
+      );
+
+    const makeLogger = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+
+    const renderedLines = (logger: ReturnType<typeof makeLogger>) =>
+      [logger.info, logger.warn, logger.error].flatMap((fn) =>
+        fn.mock.calls.map((call) => {
+          expect(isLogMessage(call[0])).toBe(true);
+          return renderLogMessage(call[0]);
+        }),
+      );
+
+    it('keeps notification content and Prisma error details out of log lines', async () => {
+      const logger = makeLogger();
+      backend.injectLogger(logger);
+
+      (mockPrismaClient.notification.create as Mock).mockRejectedValue(makePrismaError());
+      (mockPrismaClient.notification.update as Mock).mockRejectedValue(makePrismaError());
+      (mockPrismaClient.notification.findMany as Mock).mockRejectedValue(makePrismaError());
+
+      await expect(
+        backend.persistNotification({
+          id: undefined,
+          userId: 'user1',
+          notificationType: NotificationTypeEnum.EMAIL,
+          bodyTemplate: 'Hello Jane Synthetic',
+          contextName: 'testContext' as keyof TestContexts,
+          contextParameters: { email: 'jane.synthetic@example.com', dob: '1970-01-01' },
+          title: 'Results for Jane Synthetic',
+          subjectTemplate: 'Jane Synthetic',
+          extraParams: null,
+          sendAfter: null,
+        } as any),
+      ).rejects.toThrow();
+      await expect(backend.markAsSent('1', false)).rejects.toThrow();
+      await expect(backend.markAsFailed('1', false)).rejects.toThrow();
+      await expect(backend.getPendingNotifications(0, 10)).rejects.toThrow();
+
+      const lines = renderedLines(logger);
+      expect(lines.length).toBeGreaterThan(0);
+      for (const line of lines) {
+        for (const phi of syntheticPhi) {
+          expect(line).not.toContain(phi);
+        }
+      }
+      expect(logger.info).toHaveBeenCalledWith(
+        logMessageMatching('Marking notification 1 as sent'),
+      );
+      expect(logger.info).toHaveBeenCalledWith(
+        logMessageMatching('Fetching pending notifications: page 0, pageSize 10'),
+      );
+    });
+
+    it('logs only ids and counts on the success path', async () => {
+      const logger = makeLogger();
+      backend.injectLogger(logger);
+      (mockPrismaClient.notification.create as Mock).mockResolvedValue({
+        ...mockNotification,
+        title: 'Results for Jane Synthetic',
+        contextParameters: { email: 'jane.synthetic@example.com' },
+      });
+
+      await backend.persistNotification({
+        ...mockNotification,
+        id: undefined,
+        title: 'Results for Jane Synthetic',
+        contextParameters: { email: 'jane.synthetic@example.com' },
+      } as any);
+
+      expect(logger.info).toHaveBeenCalledWith(
+        logMessageMatching('Notification created successfully with ID: 1'),
+      );
+      for (const line of renderedLines(logger)) {
+        for (const phi of syntheticPhi) {
+          expect(line).not.toContain(phi);
+        }
+      }
     });
   });
 
