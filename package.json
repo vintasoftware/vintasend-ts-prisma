@@ -24,15 +24,15 @@
   "author": "Hugo Bessa",
   "license": "MIT",
   "dependencies": {
-    "@prisma/client": "^7.4.2",
-    "prisma": "^7.4.2",
+    "@prisma/client": "^7.10.1",
+    "prisma": "^7.10.1",
     "vintasend": "^1.0.0-alpha7"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.10",
-    "@vitest/coverage-v8": "4.0.18",
+    "@biomejs/biome": "^2.6.4",
+    "@vitest/coverage-v8": "5.0.5",
     "husky": "^9.1.7",
-    "typescript": "^5.9.3",
-    "vitest": "4.0.18"
+    "typescript": "^7.0.2",
+    "vitest": "5.0.5"
   }
 }
