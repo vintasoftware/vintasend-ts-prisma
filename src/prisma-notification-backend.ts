@@ -17,10 +17,17 @@ import type {
   NotificationStatus,
   NotificationType,
   OneOffNotificationInput,
+  RequeueNotificationOptions,
   StorageIdentifiers,
   StoredAttachment,
 } from 'vintasend';
-import { isAttachmentReference, log, logCount, logId } from 'vintasend';
+import {
+  isAttachmentReference,
+  log,
+  logCount,
+  logId,
+  REQUEUEABLE_NOTIFICATION_STATUSES,
+} from 'vintasend';
 
 export const NotificationStatusEnum = {
   PENDING_SEND: 'PENDING_SEND',
@@ -1753,6 +1760,54 @@ export class PrismaNotificationBackend<
         status: NotificationStatusEnum.CANCELLED,
       },
     });
+  }
+
+  /**
+   * Put a failed or cancelled notification back into `PENDING_SEND`.
+   *
+   * The status check is part of the `UPDATE`'s `WHERE`, so a notification another caller has
+   * already re-queued, or a worker has meanwhile sent, is refused rather than overwritten.
+   */
+  async requeueNotification(
+    notificationId: NonNullable<
+      Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
+    >['id'],
+    options: RequeueNotificationOptions,
+  ): Promise<AnyDatabaseNotification<Config>> {
+    this.logger?.info(log`Requeuing notification ${logId(notificationId)}`);
+    let updated: DelegateTypes['notificationModel'];
+
+    try {
+      updated = await this.prismaClient.notification.update({
+        where: {
+          id: notificationId as Config['NotificationIdType'],
+          status: { in: [...REQUEUEABLE_NOTIFICATION_STATUSES] },
+        },
+        data: {
+          status: NotificationStatusEnum.PENDING_SEND,
+          sentAt: null,
+          ...('sendAfter' in options ? { sendAfter: options.sendAfter ?? null } : {}),
+        },
+        include: notificationWithAttachmentsInclude,
+      });
+    } catch (error) {
+      if (!this.isRecordNotFoundError(error)) {
+        throw error;
+      }
+
+      const existing = await this.prismaClient.notification.findUnique({
+        where: { id: notificationId as Config['NotificationIdType'] },
+      });
+      if (!existing) {
+        throw new Error(`Notification ${String(notificationId)} not found`);
+      }
+      throw new Error(
+        `Cannot requeue notification ${String(notificationId)} in status ${existing.status}`,
+      );
+    }
+
+    this.logger?.info(log`Notification ${logId(notificationId)} requeued`);
+    return this.serializeAnyNotification(updated);
   }
 
   async getNotification(
