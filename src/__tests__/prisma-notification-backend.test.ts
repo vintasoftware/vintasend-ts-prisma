@@ -685,6 +685,92 @@ describe('PrismaNotificationBackend', () => {
     });
   });
 
+  describe('requeueNotification', () => {
+    const attachmentsInclude = {
+      attachments: { include: { attachmentFile: true } },
+    };
+
+    it('moves a failed or cancelled notification back to pending in one conditional update', async () => {
+      const updateMock = mockPrismaClient.notification.update as Mock;
+      updateMock.mockResolvedValue({ ...mockNotification, attachments: [] });
+
+      const result = await backend.requeueNotification('1', {});
+
+      expect(updateMock).toHaveBeenCalledWith({
+        where: {
+          id: '1',
+          status: { in: [NotificationStatusEnum.FAILED, NotificationStatusEnum.CANCELLED] },
+        },
+        data: {
+          status: NotificationStatusEnum.PENDING_SEND,
+          sentAt: null,
+        },
+        include: attachmentsInclude,
+      });
+      expect(result.status).toBe(NotificationStatusEnum.PENDING_SEND);
+    });
+
+    it('sets sendAfter when one is given', async () => {
+      const sendAfter = new Date('2999-01-01T00:00:00.000Z');
+      const updateMock = mockPrismaClient.notification.update as Mock;
+      updateMock.mockResolvedValue({ ...mockNotification, sendAfter, attachments: [] });
+
+      await backend.requeueNotification('1', { sendAfter });
+
+      expect(updateMock.mock.calls[0]?.[0].data).toEqual({
+        status: NotificationStatusEnum.PENDING_SEND,
+        sentAt: null,
+        sendAfter,
+      });
+    });
+
+    it('clears sendAfter when null is given', async () => {
+      const updateMock = mockPrismaClient.notification.update as Mock;
+      updateMock.mockResolvedValue({ ...mockNotification, attachments: [] });
+
+      await backend.requeueNotification('1', { sendAfter: null });
+
+      expect(updateMock.mock.calls[0]?.[0].data).toEqual({
+        status: NotificationStatusEnum.PENDING_SEND,
+        sentAt: null,
+        sendAfter: null,
+      });
+    });
+
+    it('refuses a notification in another status, naming it', async () => {
+      const updateMock = mockPrismaClient.notification.update as Mock;
+      updateMock.mockRejectedValue(Object.assign(new Error('not found'), { code: 'P2025' }));
+      const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
+      findUniqueMock.mockResolvedValue({
+        ...mockNotification,
+        status: NotificationStatusEnum.SENT,
+      });
+
+      await expect(backend.requeueNotification('1', {})).rejects.toThrow(
+        'Cannot requeue notification 1 in status SENT',
+      );
+    });
+
+    it('refuses a notification that does not exist', async () => {
+      const updateMock = mockPrismaClient.notification.update as Mock;
+      updateMock.mockRejectedValue(Object.assign(new Error('not found'), { code: 'P2025' }));
+      const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
+      findUniqueMock.mockResolvedValue(null);
+
+      await expect(backend.requeueNotification('1', {})).rejects.toThrow(
+        'Notification 1 not found',
+      );
+    });
+
+    it('rethrows any other error', async () => {
+      const updateMock = mockPrismaClient.notification.update as Mock;
+      updateMock.mockRejectedValue(new Error('connection lost'));
+
+      await expect(backend.requeueNotification('1', {})).rejects.toThrow('connection lost');
+      expect(mockPrismaClient.notification.findUnique).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getNotification', () => {
     it('should get a notification by id', async () => {
       const findUniqueMock = mockPrismaClient.notification.findUnique as Mock;
