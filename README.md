@@ -98,6 +98,51 @@ single version or a list:
 await service.filterNotifications({ usedTemplateVersion: [1, 2] }, 0, 20);
 ```
 
+`hasRequestedTemplateVersion` and `hasSendAfter` filter on whether either column is set
+(`IS NOT NULL` / `IS NULL`), negation included, and combine with a version list or a
+`sendAfterRange` on the same column.
+
+## Moving notifications safely
+
+The backend implements every optional action `VintaSend` offers for moving notifications, and
+reports all four in `getActionCapabilities()` (`repin.expectedVersion`, `requeue.expectedVersion`,
+`requeue.templateVersion`, `versions.filter`):
+
+```typescript
+const failed = { bodyTemplate: 'welcome', status: 'FAILED' } as const;
+
+// `select: { id, updatedAt }` and no include: no recipient, context or content is read.
+for (const { id, version } of await service.filterNotificationVersions(failed, 0, 100)) {
+  // One UPDATE: pin, re-queue, and only if the row is unchanged since it was listed.
+  await service.requeueNotification(id, { templateVersion: 4, expectedVersion: version });
+}
+```
+
+* **Every move is one conditional `UPDATE`.** The `WHERE` carries the statuses the move is allowed
+  from, so a notification a worker sends in between is never re-pinned or re-queued. A re-pin also
+  skips a notification already on the version, writing nothing.
+* **`expectedVersion` joins the `WHERE` as `updatedAt`.** The version token is the row's
+  `updatedAt` as an ISO string; a notification written since it was listed is refused with
+  `NotificationActionError` reason `CHANGED`, and nothing is written. A malformed token is refused
+  the same way, before any query.
+* **When an `UPDATE` matches nothing**, the row is read once to say why: not found, `CHANGED`, or
+  the wrong status (`INVALID_STATUS` for a re-pin).
+
+No schema change or migration is needed, but the token relies on `updatedAt` being
+`@updatedAt`, as in `schema.prisma.example`:
+
+```prisma
+model Notification {
+  // ...
+  updatedAt DateTime @updatedAt
+}
+```
+
+Two limits follow from using a timestamp. `updatedAt` has millisecond precision, so two writes to
+the same row within one millisecond leave the token unchanged, and the second goes unnoticed by
+`expectedVersion` (the status condition in the `WHERE` still applies). And a write made outside
+Prisma, such as raw SQL, does not move it unless your database does; set `updatedAt` yourself there.
+
 ## Notes
 
 - This package does **not** assume a concrete Prisma client at build time.
