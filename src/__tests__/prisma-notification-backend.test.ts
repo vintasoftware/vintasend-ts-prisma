@@ -237,6 +237,7 @@ describe('PrismaNotificationBackend', () => {
         data: {
           status: NotificationStatusEnum.SENT,
           sentAt: expect.any(Date),
+          notificationVersion: expect.any(String),
         },
       });
       expect(result.status).toBe(NotificationStatusEnum.SENT);
@@ -263,6 +264,7 @@ describe('PrismaNotificationBackend', () => {
         data: {
           status: NotificationStatusEnum.SENT,
           sentAt: expect.any(Date),
+          notificationVersion: expect.any(String),
         },
       });
       expect(result.status).toBe(NotificationStatusEnum.SENT);
@@ -309,6 +311,7 @@ describe('PrismaNotificationBackend', () => {
         data: {
           status: NotificationStatusEnum.SENT,
           sentAt: expect.any(Date),
+          notificationVersion: expect.any(String),
         },
       });
 
@@ -390,6 +393,7 @@ describe('PrismaNotificationBackend', () => {
         data: {
           status: 'READ',
           readAt: expect.any(Date),
+          notificationVersion: expect.any(String),
         },
       });
       expect(result?.status).toBe(NotificationStatusEnum.READ);
@@ -422,6 +426,7 @@ describe('PrismaNotificationBackend', () => {
         data: {
           status: 'READ',
           readAt: expect.any(Date),
+          notificationVersion: expect.any(String),
         },
       });
       expect(result?.status).toBe(NotificationStatusEnum.READ);
@@ -587,6 +592,7 @@ describe('PrismaNotificationBackend', () => {
         data: {
           status: NotificationStatusEnum.FAILED,
           sentAt: expect.any(Date),
+          notificationVersion: expect.any(String),
         },
       });
       expect(result.status).toBe(NotificationStatusEnum.FAILED);
@@ -612,6 +618,7 @@ describe('PrismaNotificationBackend', () => {
         data: {
           status: NotificationStatusEnum.FAILED,
           sentAt: expect.any(Date),
+          notificationVersion: expect.any(String),
         },
       });
       expect(result.status).toBe(NotificationStatusEnum.FAILED);
@@ -658,6 +665,7 @@ describe('PrismaNotificationBackend', () => {
         data: {
           status: NotificationStatusEnum.FAILED,
           sentAt: expect.any(Date),
+          notificationVersion: expect.any(String),
         },
       });
 
@@ -674,14 +682,19 @@ describe('PrismaNotificationBackend', () => {
         status: NotificationStatusEnum.CANCELLED,
       });
 
-      await backend.cancelNotification('1');
+      const result = await backend.cancelNotification('1');
 
       expect(mockPrismaClient.notification.update).toHaveBeenCalledWith({
         where: { id: '1' },
         data: {
           status: NotificationStatusEnum.CANCELLED,
+          notificationVersion: expect.any(String),
         },
       });
+      // The token the write stored, for the service to hand to the additional backends.
+      const stored = (mockPrismaClient.notification.update as Mock).mock.calls[0]?.[0].data
+        .notificationVersion;
+      expect(result).toEqual({ notificationVersion: stored });
     });
   });
 
@@ -704,6 +717,7 @@ describe('PrismaNotificationBackend', () => {
         data: {
           status: NotificationStatusEnum.PENDING_SEND,
           sentAt: null,
+          notificationVersion: expect.any(String),
         },
         include: attachmentsInclude,
       });
@@ -721,6 +735,7 @@ describe('PrismaNotificationBackend', () => {
         status: NotificationStatusEnum.PENDING_SEND,
         sentAt: null,
         sendAfter,
+        notificationVersion: expect.any(String),
       });
     });
 
@@ -734,6 +749,7 @@ describe('PrismaNotificationBackend', () => {
         status: NotificationStatusEnum.PENDING_SEND,
         sentAt: null,
         sendAfter: null,
+        notificationVersion: expect.any(String),
       });
     });
 
@@ -817,6 +833,7 @@ describe('PrismaNotificationBackend', () => {
         data: {
           adapterUsed: 'test-adapter',
           contextUsed: context,
+          notificationVersion: expect.any(String),
         },
       });
     });
@@ -835,6 +852,7 @@ describe('PrismaNotificationBackend', () => {
         data: {
           adapterUsed: 'test-adapter',
           contextUsed: context,
+          notificationVersion: expect.any(String),
         },
       });
     });
@@ -979,6 +997,7 @@ describe('PrismaNotificationBackend', () => {
       const incomingSnapshot = {
         ...mockNotification,
         title: 'Replicated New Title',
+        notificationVersion: 'token-from-primary',
         updatedAt: new Date('2026-02-28T11:00:00.000Z'),
       };
 
@@ -993,6 +1012,7 @@ describe('PrismaNotificationBackend', () => {
       expect(persistNotificationUpdateSpy).toHaveBeenCalledWith(
         incomingSnapshot.id,
         expect.objectContaining({ title: 'Replicated New Title' }),
+        { notificationVersion: 'token-from-primary' },
       );
     });
   });
@@ -1049,6 +1069,7 @@ describe('PrismaNotificationBackend', () => {
         lastName: null,
         contextUsed: { generatedValue: 'test' },
         extraParams: { param1: 'value1', param2: true, param3: 42 },
+        notificationVersion: 'stored-token',
       };
 
       const result = backend.serializeNotification(fullNotification);
@@ -1071,6 +1092,7 @@ describe('PrismaNotificationBackend', () => {
         gitCommitSha: fullNotification.gitCommitSha,
         sentAt: fullNotification.sentAt,
         readAt: fullNotification.readAt,
+        notificationVersion: 'stored-token',
         createdAt: fullNotification.createdAt,
         updatedAt: fullNotification.updatedAt,
       });
@@ -2299,6 +2321,7 @@ describe('PrismaNotificationBackend', () => {
           data: {
             title: '',
             subjectTemplate: null,
+            notificationVersion: expect.any(String),
           },
         });
         expect(result.title).toBe('');
