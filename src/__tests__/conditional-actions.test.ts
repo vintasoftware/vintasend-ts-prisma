@@ -368,12 +368,16 @@ describe('presence filters', () => {
       'negation.hasSendAfter': true,
       'fields.hasRequestedTemplateVersion': true,
       'negation.hasRequestedTemplateVersion': true,
+      'fields.id': true,
+      'negation.id': true,
     });
     expect(await service.getBackendSupportedActionCapabilities()).toEqual({
       'repin.expectedVersion': true,
       'requeue.expectedVersion': true,
       'requeue.templateVersion': true,
       'versions.filter': true,
+      'repin.bulk': true,
+      'requeue.bulk': true,
     });
   });
 });
@@ -926,5 +930,150 @@ describe('rows written before the notificationVersion column existed', () => {
 
     expect(notifications.writes).toBe(0);
     expect(notifications.snapshot(id).status).toBe('FAILED');
+  });
+});
+
+describe('the id filter', () => {
+  it('recounts just a batch of IDs against a filter', async () => {
+    const a = notifications.seed({ status: 'FAILED' });
+    const b = notifications.seed({ status: 'FAILED' });
+    notifications.seed({ status: 'FAILED' }); // matches, but not in the batch
+    const sent = notifications.seed({ status: 'SENT' }); // in the batch only
+
+    const listed = await makeService().filterNotificationVersions(
+      { and: [{ status: 'FAILED' }, { id: [a, b, sent] }] },
+      0,
+      50,
+    );
+
+    expect(listed.map((entry) => entry.id)).toEqual([a, b]);
+  });
+
+  it('matches one ID, nothing for an empty list, and everything else when negated', async () => {
+    const a = notifications.seed({});
+    const b = notifications.seed({});
+    const service = makeService();
+
+    expect((await service.filterNotificationVersions({ id: a }, 0, 50)).map((e) => e.id)).toEqual([
+      a,
+    ]);
+    expect(await service.filterNotificationVersions({ id: [] }, 0, 50)).toEqual([]);
+    expect(
+      (await service.filterNotificationVersions({ not: { id: [a] } }, 0, 50)).map((e) => e.id),
+    ).toEqual([b]);
+  });
+});
+
+describe('repinNotifications', () => {
+  it('re-pins with one conditional UPDATE per target, reading nothing first', async () => {
+    const pending = notifications.seed({ sendAfter: FUTURE, requestedTemplateVersion: 1 });
+    const failed = notifications.seed({ status: 'FAILED', requestedTemplateVersion: 1 });
+    const service = makeService();
+    const targets = await service.filterNotificationVersions(movableTo(V), 0, 50);
+    notifications.findMany.mockClear();
+
+    const results = await service.repinNotifications(targets, {
+      templateVersion: V,
+      filter: movableTo(V),
+    });
+
+    expect(results.map((result) => [result.id, result.outcome])).toEqual([
+      [pending, 'WRITTEN'],
+      [failed, 'WRITTEN'],
+    ]);
+    expect(notifications.findUnique).not.toHaveBeenCalled();
+    expect(notifications.findMany).not.toHaveBeenCalled();
+    expect(notifications.update).toHaveBeenCalledTimes(2);
+    for (const call of notifications.update.mock.calls) {
+      expect((call[0] as { select?: unknown }).select).toEqual({ id: true });
+    }
+    for (const result of results) {
+      expect(notifications.snapshot(result.id as string)).toMatchObject({
+        requestedTemplateVersion: V,
+        notificationVersion: result.version,
+      });
+    }
+  });
+
+  it('skips, with a reason, what changed, moved out of the filter, was sent or is already pinned', async () => {
+    const changed = notifications.seed({ requestedTemplateVersion: 1 });
+    const outOfFilter = notifications.seed({ bodyTemplate: 'reset', requestedTemplateVersion: 1 });
+    const sent = notifications.seed({ status: 'SENT', requestedTemplateVersion: 1 });
+    const alreadyOnV = notifications.seed({ requestedTemplateVersion: V });
+    const moves = notifications.seed({ requestedTemplateVersion: 1 });
+    const service = makeService();
+    const targets = await service.filterNotificationVersions({}, 0, 50);
+    await backend.markAsFailed(changed, true); // written after it was listed
+    const writes = notifications.writes;
+
+    const results = await service.repinNotifications(
+      [...targets, { id: 'does-not-exist', version: 'x' }],
+      { templateVersion: V, filter: { bodyTemplate: 'welcome' } },
+    );
+    const byId = new Map(results.map((result) => [result.id, result]));
+
+    expect(byId.get(changed)?.outcome).toBe('CHANGED');
+    expect(byId.get(outOfFilter)?.outcome).toBe('NOT_MATCHED');
+    expect(byId.get(sent)).toMatchObject({ outcome: 'INVALID_STATUS', status: 'SENT' });
+    expect(byId.get(alreadyOnV)).toMatchObject({
+      outcome: 'UNCHANGED',
+      version: `seeded-${alreadyOnV}`,
+    });
+    expect(byId.get(moves)?.outcome).toBe('WRITTEN');
+    expect(byId.get('does-not-exist')?.outcome).toBe('NOT_MATCHED');
+    expect(notifications.writes).toBe(writes + 1);
+  });
+
+  it('accepts the legacy updatedAt token of a row written before the column existed', async () => {
+    const legacy = notifications.seed({ notificationVersion: null, requestedTemplateVersion: 1 });
+    const service = makeService();
+    const targets = await service.filterNotificationVersions({ id: legacy }, 0, 50);
+
+    const [result] = await service.repinNotifications(targets, { templateVersion: V });
+
+    expect(result.outcome).toBe('WRITTEN');
+  });
+});
+
+describe('requeueNotifications', () => {
+  it('re-queues failed notifications, re-pinned and rescheduled, and sends nothing', async () => {
+    const failed = notifications.seed({
+      status: 'FAILED',
+      requestedTemplateVersion: 1,
+      sentAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    const pending = notifications.seed({ requestedTemplateVersion: 1 });
+    const service = makeService();
+    const targets = await service.filterNotificationVersions({}, 0, 50);
+
+    const results = await service.requeueNotifications(targets, {
+      templateVersion: V,
+      sendAfter: FUTURE,
+    });
+    const byId = new Map(results.map((result) => [result.id, result]));
+
+    expect(byId.get(failed)?.outcome).toBe('WRITTEN');
+    expect(byId.get(pending)).toMatchObject({ outcome: 'INVALID_STATUS', status: 'PENDING_SEND' });
+    expect(adapter.send).not.toHaveBeenCalled();
+    expect(notifications.snapshot(failed)).toMatchObject({
+      status: 'PENDING_SEND',
+      sentAt: null,
+      sendAfter: FUTURE,
+      requestedTemplateVersion: V,
+      notificationVersion: byId.get(failed)?.version,
+    });
+  });
+
+  it('keeps the send time when sendAfter is left out', async () => {
+    const failed = notifications.seed({ status: 'FAILED', sendAfter: FUTURE });
+    const service = makeService();
+    const targets = await service.filterNotificationVersions({ id: failed }, 0, 50);
+
+    await service.requeueNotifications(targets);
+
+    expect(notifications.snapshot(failed)).toMatchObject({
+      status: 'PENDING_SEND',
+      sendAfter: FUTURE,
+    });
   });
 });

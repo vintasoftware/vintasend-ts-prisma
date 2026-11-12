@@ -7,7 +7,10 @@ import type {
   BaseLogger,
   BaseNotificationBackend,
   BaseNotificationTypeConfig,
+  BulkNotificationActionOptions,
+  BulkNotificationActionResult,
   BulkNotificationWriteOptions,
+  BulkRequeueNotificationOptions,
   DatabaseNotification,
   DatabaseOneOffNotification,
   InputJsonValue,
@@ -152,7 +155,7 @@ type PrismaNotificationWhereInput<NotificationIdType, UserIdType> = {
   NOT?:
     | PrismaNotificationWhereInput<NotificationIdType, UserIdType>
     | PrismaNotificationWhereInput<NotificationIdType, UserIdType>[];
-  id?: NotificationIdType;
+  id?: NotificationIdType | { in: NotificationIdType[] };
   status?: NotificationStatus | { not: NotificationStatus } | { in: NotificationStatus[] };
   notificationType?: NotificationType | { in: NotificationType[] };
   sendAfter?: { gt: Date } | null | { not: null } | PrismaDateRangeFilter;
@@ -688,6 +691,10 @@ export class PrismaNotificationBackend<
 
     const where: PrismaNotificationWhereInput<Config['NotificationIdType'], Config['UserIdType']> =
       {};
+
+    if (filter.id !== undefined) {
+      where.id = Array.isArray(filter.id) ? { in: filter.id } : filter.id;
+    }
 
     if (filter.status !== undefined) {
       where.status = Array.isArray(filter.status) ? { in: filter.status } : filter.status;
@@ -2069,6 +2076,181 @@ export class PrismaNotificationBackend<
   }
 
   /**
+   * Pin several notifications to `templateVersion`, one conditional `UPDATE` per target and no
+   * read before any of them.
+   *
+   * Each `UPDATE`'s `WHERE` is the one `repinNotification` uses, with the target's token and
+   * `options.filter` added, and it selects the ID only. The targets it matched nothing for are
+   * then looked up together, `id`, status, token and pin only, to say why.
+   */
+  async repinNotifications(
+    targets: NotificationVersion<Config>[],
+    templateVersion: number,
+    options: BulkNotificationActionOptions<Config>,
+  ): Promise<BulkNotificationActionResult<Config>[]> {
+    if (!(Number.isInteger(templateVersion) && templateVersion >= 0)) {
+      throw new RangeError(
+        'Cannot repin notifications: templateVersion must be a non-negative integer',
+      );
+    }
+
+    const results = await this.runBulkAction(targets, options.filter, {
+      statuses: REPINNABLE_NOTIFICATION_STATUSES,
+      // As in `repinNotification`: `{ not: v }` alone is `<> v`, which no NULL satisfies.
+      where: {
+        OR: [
+          { requestedTemplateVersion: null },
+          { requestedTemplateVersion: { not: templateVersion } },
+        ],
+      },
+      data: { requestedTemplateVersion: templateVersion },
+      alreadyDone: (row) => row.requestedTemplateVersion === templateVersion,
+    });
+
+    this.logger?.info(
+      log`${logCount(results.filter((result) => result.outcome === 'WRITTEN').length)} notifications repinned to template version ${logCount(templateVersion)}`,
+    );
+    return results;
+  }
+
+  /**
+   * Put several notifications back into `PENDING_SEND`, one conditional `UPDATE` per target and
+   * no read before any of them. Writes what `requeueNotification` writes; see
+   * `repinNotifications` for how the targets are checked.
+   */
+  async requeueNotifications(
+    targets: NotificationVersion<Config>[],
+    options: BulkRequeueNotificationOptions<Config>,
+  ): Promise<BulkNotificationActionResult<Config>[]> {
+    const { templateVersion } = options;
+    if (
+      templateVersion !== undefined &&
+      !(Number.isInteger(templateVersion) && templateVersion >= 0)
+    ) {
+      throw new RangeError(
+        'Cannot requeue notifications: templateVersion must be a non-negative integer',
+      );
+    }
+
+    const results = await this.runBulkAction(targets, options.filter, {
+      statuses: REQUEUEABLE_NOTIFICATION_STATUSES,
+      data: {
+        status: NotificationStatusEnum.PENDING_SEND,
+        sentAt: null,
+        ...('sendAfter' in options ? { sendAfter: options.sendAfter ?? null } : {}),
+        ...(templateVersion === undefined ? {} : { requestedTemplateVersion: templateVersion }),
+      },
+    });
+
+    this.logger?.info(
+      log`${logCount(results.filter((result) => result.outcome === 'WRITTEN').length)} notifications requeued`,
+    );
+    return results;
+  }
+
+  /**
+   * One conditional `UPDATE` per target, then one lookup of the targets none matched.
+   *
+   * `alreadyDone` says whether a row that is at the expected version, matches the filter and is in
+   * an allowed status was left alone because it needed no write (`UNCHANGED`); otherwise such a
+   * row changed between its `UPDATE` and the lookup (`CHANGED`).
+   */
+  private async runBulkAction(
+    targets: NotificationVersion<Config>[],
+    filter: NotificationFilter<Config> | undefined,
+    action: {
+      statuses: readonly NotificationStatus[];
+      where?: object;
+      data: object;
+      alreadyDone?: (row: { requestedTemplateVersion: number | null }) => boolean;
+    },
+  ): Promise<BulkNotificationActionResult<Config>[]> {
+    const filterWhere =
+      filter === undefined ? [] : [this.convertNotificationFilterToPrismaWhere(filter)];
+    const results = new Map<string, BulkNotificationActionResult<Config>>();
+    const missed: NotificationVersion<Config>[] = [];
+
+    for (const target of targets) {
+      const version = randomUUID();
+      try {
+        await this.prismaClient.notification.update({
+          where: {
+            id: target.id,
+            status: { in: [...action.statuses] },
+            AND: [
+              expectedVersionWhere(target.version),
+              ...filterWhere,
+              ...(action.where === undefined ? [] : [action.where]),
+            ],
+          },
+          data: { ...action.data, notificationVersion: version },
+          select: { id: true },
+        });
+        results.set(String(target.id), { id: target.id, outcome: 'WRITTEN', version });
+      } catch (error) {
+        if (this.isRecordNotFoundError(error)) {
+          missed.push(target);
+        } else {
+          this.logger?.warn(log`Bulk write to notification ${logId(target.id)} failed`);
+          results.set(String(target.id), { id: target.id, outcome: 'FAILED' });
+        }
+      }
+    }
+
+    if (missed.length > 0) {
+      const missedIds = missed.map((target) => target.id);
+      const rows = (await this.prismaClient.notification.findMany({
+        where: { id: { in: missedIds } },
+        select: {
+          id: true,
+          status: true,
+          notificationVersion: true,
+          updatedAt: true,
+          requestedTemplateVersion: true,
+        },
+      })) as unknown as {
+        id: Config['NotificationIdType'];
+        status: NotificationStatus;
+        notificationVersion: string | null;
+        updatedAt: Date;
+        requestedTemplateVersion: number | null;
+      }[];
+      const matching =
+        filter === undefined
+          ? null
+          : new Set(
+              (
+                (await this.prismaClient.notification.findMany({
+                  where: { AND: [{ id: { in: missedIds } }, ...filterWhere] },
+                  select: { id: true },
+                })) as unknown as { id: Config['NotificationIdType'] }[]
+              ).map((row) => String(row.id)),
+            );
+      const rowsById = new Map(rows.map((row) => [String(row.id), row]));
+
+      for (const target of missed) {
+        const key = String(target.id);
+        const row = rowsById.get(key);
+        if (!row || (matching !== null && !matching.has(key))) {
+          results.set(key, { id: target.id, outcome: 'NOT_MATCHED' });
+        } else if (effectiveVersion(row) !== target.version) {
+          results.set(key, { id: target.id, outcome: 'CHANGED' });
+        } else if (!action.statuses.includes(row.status)) {
+          results.set(key, { id: target.id, outcome: 'INVALID_STATUS', status: row.status });
+        } else if (action.alreadyDone?.(row)) {
+          results.set(key, { id: target.id, outcome: 'UNCHANGED', version: target.version });
+        } else {
+          results.set(key, { id: target.id, outcome: 'CHANGED' });
+        }
+      }
+    }
+
+    return targets.map(
+      (target) => results.get(String(target.id)) as BulkNotificationActionResult<Config>,
+    );
+  }
+
+  /**
    * After a conditional `UPDATE` matched nothing, refuse with `CHANGED` when the row is no longer
    * at the expected version. This only says why; the `UPDATE`'s `WHERE` is what kept the write
    * from happening.
@@ -2204,6 +2386,9 @@ export class PrismaNotificationBackend<
       'negation.hasSendAfter': true,
       'fields.hasRequestedTemplateVersion': true,
       'negation.hasRequestedTemplateVersion': true,
+      // `id = ?` / `id IN (...)`, and `NOT` of either.
+      'fields.id': true,
+      'negation.id': true,
     };
   }
 
@@ -2218,6 +2403,8 @@ export class PrismaNotificationBackend<
       'requeue.expectedVersion': true,
       'requeue.templateVersion': true,
       'versions.filter': true,
+      'repin.bulk': true,
+      'requeue.bulk': true,
     };
   }
 
