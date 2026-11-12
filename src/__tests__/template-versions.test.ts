@@ -146,7 +146,7 @@ describe('writing', () => {
 
     expect(prisma.notification.update).toHaveBeenCalledWith({
       where: { id: '1' },
-      data: { usedTemplateVersion: 7 },
+      data: { usedTemplateVersion: 7, notificationVersion: expect.any(String) },
     });
   });
 

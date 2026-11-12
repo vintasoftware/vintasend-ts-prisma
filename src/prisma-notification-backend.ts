@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type {
   AnyDatabaseNotification,
   AnyNotification,
@@ -6,6 +7,7 @@ import type {
   BaseLogger,
   BaseNotificationBackend,
   BaseNotificationTypeConfig,
+  BulkNotificationWriteOptions,
   DatabaseNotification,
   DatabaseOneOffNotification,
   InputJsonValue,
@@ -18,6 +20,8 @@ import type {
   NotificationStatus,
   NotificationType,
   NotificationVersion,
+  NotificationWriteOptions,
+  NotificationWriteResult,
   OneOffNotificationInput,
   RepinNotificationOptions,
   RequeueNotificationOptions,
@@ -76,6 +80,9 @@ export interface PrismaNotificationModel<IdType, UserId> {
   // it. Both nullable: a notification whose renderer does not version templates has neither.
   requestedTemplateVersion: number | null;
   usedTemplateVersion: number | null;
+  // The version token the primary backend generated for the notification's last write, copied
+  // as it is by replication. Null on a row no write has touched since the column was added.
+  notificationVersion: string | null;
   createdAt: Date;
   updatedAt: Date;
   user?: {
@@ -164,20 +171,49 @@ type PrismaNotificationWhereInput<NotificationIdType, UserIdType> = {
 };
 
 /**
- * The version token `filterNotificationVersions` hands out, and `expectedVersion` is compared
- * against: the row's `updatedAt`, as an ISO 8601 string.
+ * The version token a row is at: what `filterNotificationVersions` hands out, reads return as
+ * `notificationVersion`, and `expectedVersion` is compared against.
  *
- * `updatedAt` is `@updatedAt` in the documented schema, so Prisma moves it on every write this
- * backend makes. Callers compare tokens for equality only.
+ * That is the `notificationVersion` column. Every write this backend makes sets it: to a new UUID
+ * on the primary, or to the primary's token on a replica. A row no write has touched since the
+ * column was added has it null, and its token is then `updatedAt` as an ISO 8601 string, the token
+ * earlier versions of this backend handed out, so a token listed before the upgrade still works.
+ * Callers compare tokens for equality only.
  */
-function versionToken(updatedAt: Date): string {
-  return updatedAt.toISOString();
+function effectiveVersion(row: { notificationVersion: string | null; updatedAt: Date }): string {
+  return row.notificationVersion ?? row.updatedAt.toISOString();
 }
 
-/** The `updatedAt` a token names, or `null` for a token this backend could not have handed out. */
-function parseVersionToken(token: string): Date | null {
+/** The token a write stores: the one it was handed when replicating, or a new one. */
+function nextVersion(options: NotificationWriteOptions | undefined): string {
+  return options?.notificationVersion ?? randomUUID();
+}
+
+/** The `updatedAt` a legacy token names, or `null` when the token is not one. */
+function parseLegacyVersionToken(token: string): Date | null {
   const parsed = new Date(token);
   return Number.isNaN(parsed.getTime()) || parsed.toISOString() !== token ? null : parsed;
+}
+
+/**
+ * The `WHERE` condition that holds only while a row is at `expectedVersion`. It goes into the
+ * conditional `UPDATE` itself, so the check and the write are one statement and a write landing
+ * in between makes the `UPDATE` match nothing.
+ *
+ * A token that reads as a legacy `updatedAt` token also matches a row whose column is still null
+ * and whose `updatedAt` is that instant. Once any write sets the column, only the column counts.
+ */
+function expectedVersionWhere(expectedVersion: string) {
+  const legacyUpdatedAt = parseLegacyVersionToken(expectedVersion);
+  if (legacyUpdatedAt === null) {
+    return { notificationVersion: expectedVersion };
+  }
+  return {
+    OR: [
+      { notificationVersion: expectedVersion },
+      { notificationVersion: null, updatedAt: legacyUpdatedAt },
+    ],
+  };
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: This is a generic type for the Prisma client delegate types, which can vary greatly depending on the consumer's Prisma schema, so we allow any here.
@@ -463,6 +499,7 @@ export interface BaseNotificationCreateInput<_UserIdType, NotificationIdType = u
   gitCommitSha?: string | null;
   requestedTemplateVersion?: number | null;
   usedTemplateVersion?: number | null;
+  notificationVersion?: string | null;
   emailOrPhone?: string | null;
   firstName?: string | null;
   lastName?: string | null;
@@ -504,6 +541,7 @@ export interface BaseNotificationUpdateInput<UserIdType> {
   gitCommitSha?: string | null;
   requestedTemplateVersion?: number | null;
   usedTemplateVersion?: number | null;
+  notificationVersion?: string | null;
 }
 
 function convertJsonValueToRecord(jsonValue: JsonValue): Record<string, string | number | boolean> {
@@ -814,6 +852,7 @@ export class PrismaNotificationBackend<
       gitCommitSha: notification.gitCommitSha,
       requestedTemplateVersion: notification.requestedTemplateVersion,
       usedTemplateVersion: notification.usedTemplateVersion,
+      notificationVersion: effectiveVersion(notification),
       createdAt: notification.createdAt,
       updatedAt: notification.updatedAt,
       // Serialize attachments if present and attachmentManager is available
@@ -1224,14 +1263,19 @@ export class PrismaNotificationBackend<
     serialize: (
       db: PrismaNotificationModel<Config['NotificationIdType'], Config['UserIdType']>,
     ) => TSerialized,
+    options: NotificationWriteOptions | undefined,
   ): Promise<TSerialized> {
     const { attachments, ...notificationData } = input;
+    const data = {
+      ...buildData(notificationData as TInput),
+      notificationVersion: nextVersion(options),
+    };
 
     // If no attachments, skip transaction overhead
     if (!attachments || attachments.length === 0) {
       this.logger?.info(log`Creating notification without attachments`);
       const created = await this.prismaClient.notification.create({
-        data: buildData(notificationData as TInput),
+        data,
         include: notificationWithAttachmentsInclude,
       });
       this.logger?.info(log`Notification created successfully with ID: ${logId(created.id)}`);
@@ -1247,7 +1291,7 @@ export class PrismaNotificationBackend<
     );
     return await this.runInteractiveTransaction(async (tx) => {
       const created = await tx.notification.create({
-        data: buildData(notificationData as TInput),
+        data,
         include: notificationWithAttachmentsInclude,
       });
 
@@ -1462,6 +1506,7 @@ export class PrismaNotificationBackend<
 
   async persistNotification(
     notification: Omit<Notification<Config>, 'id'> & { id?: Config['NotificationIdType'] },
+    options?: NotificationWriteOptions,
   ): Promise<DatabaseNotification<Config>> {
     return this.createNotificationWithAttachments(
       notification,
@@ -1470,6 +1515,7 @@ export class PrismaNotificationBackend<
           n as Omit<Notification<Config>, 'id'> & { id?: Config['NotificationIdType'] },
         ),
       (db) => this.serializeRegularNotification(db),
+      options,
     );
   }
 
@@ -1478,13 +1524,14 @@ export class PrismaNotificationBackend<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
     notification: Partial<Omit<DatabaseNotification<Config>, 'id'>>,
+    options?: NotificationWriteOptions,
   ): Promise<DatabaseNotification<Config>> {
     await this.assertTenantUnchanged(notificationId, notification);
     const updated = await this.prismaClient.notification.update({
       where: {
         id: notificationId,
       },
-      data: this.buildUpdateData(notification),
+      data: { ...this.buildUpdateData(notification), notificationVersion: nextVersion(options) },
     });
 
     return this.serializeRegularNotification(updated);
@@ -1533,11 +1580,17 @@ export class PrismaNotificationBackend<
       return { applied: false };
     }
 
+    // The snapshot was read from the primary, so its token is the primary's: store it as it is.
+    const options: NotificationWriteOptions = {
+      notificationVersion: snapshot.notificationVersion,
+    };
+
     if (isOneOffSnapshot) {
       if (existingNotification) {
         await this.persistOneOffNotificationUpdate(
           snapshot.id,
           snapshot as unknown as Partial<Omit<OneOffNotificationInput<Config>, 'id'>>,
+          options,
         );
 
         return { applied: true };
@@ -1548,6 +1601,7 @@ export class PrismaNotificationBackend<
           snapshot as unknown as Omit<OneOffNotificationInput<Config>, 'id'> & {
             id?: Config['NotificationIdType'];
           },
+          options,
         );
       } catch (createError) {
         if (!this.isDuplicateReplicationConflict(createError)) {
@@ -1557,6 +1611,7 @@ export class PrismaNotificationBackend<
         await this.persistOneOffNotificationUpdate(
           snapshot.id,
           snapshot as unknown as Partial<Omit<OneOffNotificationInput<Config>, 'id'>>,
+          options,
         );
       }
 
@@ -1567,6 +1622,7 @@ export class PrismaNotificationBackend<
       await this.persistNotificationUpdate(
         snapshot.id,
         snapshot as unknown as Partial<Omit<DatabaseNotification<Config>, 'id'>>,
+        options,
       );
 
       return { applied: true };
@@ -1577,6 +1633,7 @@ export class PrismaNotificationBackend<
         snapshot as unknown as Omit<Notification<Config>, 'id'> & {
           id?: Config['NotificationIdType'];
         },
+        options,
       );
     } catch (createError) {
       if (!this.isDuplicateReplicationConflict(createError)) {
@@ -1586,6 +1643,7 @@ export class PrismaNotificationBackend<
       await this.persistNotificationUpdate(
         snapshot.id,
         snapshot as unknown as Partial<Omit<DatabaseNotification<Config>, 'id'>>,
+        options,
       );
     }
 
@@ -1597,6 +1655,7 @@ export class PrismaNotificationBackend<
     notification: Omit<OneOffNotificationInput<Config>, 'id'> & {
       id?: Config['NotificationIdType'];
     },
+    options?: NotificationWriteOptions,
   ): Promise<DatabaseOneOffNotification<Config>> {
     return this.createNotificationWithAttachments(
       notification,
@@ -1605,6 +1664,7 @@ export class PrismaNotificationBackend<
           n as OneOffNotificationInput<Config> & { id?: Config['NotificationIdType'] },
         ),
       (db) => this.serializeOneOffNotification(db),
+      options,
     );
   }
 
@@ -1613,11 +1673,15 @@ export class PrismaNotificationBackend<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
     notification: Partial<Omit<OneOffNotificationInput<Config>, 'id'>>,
+    options?: NotificationWriteOptions,
   ): Promise<DatabaseOneOffNotification<Config>> {
     await this.assertTenantUnchanged(notificationId as Config['NotificationIdType'], notification);
     const updated = await this.prismaClient.notification.update({
       where: { id: notificationId as Config['NotificationIdType'] },
-      data: this.buildOneOffInputUpdateData(notification),
+      data: {
+        ...this.buildOneOffInputUpdateData(notification),
+        notificationVersion: nextVersion(options),
+      },
     });
 
     return this.serializeOneOffNotification(updated);
@@ -1674,6 +1738,7 @@ export class PrismaNotificationBackend<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
     checkIsPending = true,
+    options?: NotificationWriteOptions,
   ): Promise<AnyDatabaseNotification<Config>> {
     this.logger?.info(log`Marking notification ${logId(notificationId)} as sent`);
     let updated: DelegateTypes['notificationModel'];
@@ -1686,6 +1751,7 @@ export class PrismaNotificationBackend<
         data: {
           status: NotificationStatusEnum.SENT,
           sentAt: new Date(),
+          notificationVersion: nextVersion(options),
         },
       });
     } catch (error) {
@@ -1716,6 +1782,7 @@ export class PrismaNotificationBackend<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
     checkIsPending = true,
+    options?: NotificationWriteOptions,
   ): Promise<AnyDatabaseNotification<Config>> {
     this.logger?.info(log`Marking notification ${logId(notificationId)} as failed`);
     let updated: DelegateTypes['notificationModel'];
@@ -1728,6 +1795,7 @@ export class PrismaNotificationBackend<
         data: {
           status: NotificationStatusEnum.FAILED,
           sentAt: new Date(),
+          notificationVersion: nextVersion(options),
         },
       });
     } catch (error) {
@@ -1758,6 +1826,7 @@ export class PrismaNotificationBackend<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
     checkIsSent = true,
+    options?: NotificationWriteOptions,
   ): Promise<DatabaseNotification<Config>> {
     this.logger?.info(log`Marking notification ${logId(notificationId)} as read`);
     // First fetch to validate it's a regular notification
@@ -1780,6 +1849,7 @@ export class PrismaNotificationBackend<
       data: {
         status: NotificationStatusEnum.READ,
         readAt: new Date(),
+        notificationVersion: nextVersion(options),
       },
     });
 
@@ -1791,15 +1861,19 @@ export class PrismaNotificationBackend<
     notificationId: NonNullable<
       Awaited<ReturnType<typeof this.prismaClient.notification.findUnique>>
     >['id'],
-  ): Promise<void> {
+    options?: NotificationWriteOptions,
+  ): Promise<NotificationWriteResult> {
+    const notificationVersion = nextVersion(options);
     await this.prismaClient.notification.update({
       where: {
         id: notificationId,
       },
       data: {
         status: NotificationStatusEnum.CANCELLED,
+        notificationVersion,
       },
     });
+    return { notificationVersion };
   }
 
   /**
@@ -1808,10 +1882,10 @@ export class PrismaNotificationBackend<
    * The status check is part of the `UPDATE`'s `WHERE`, so a notification another caller has
    * already re-queued, or a worker has meanwhile sent, is refused rather than overwritten.
    *
-   * `options.templateVersion` is written in the same `UPDATE`. `options.expectedVersion` (an
-   * `updatedAt` token from `filterNotificationVersions`) joins the `WHERE` too: a notification
-   * written since then is refused with `NotificationActionError` reason `CHANGED`, and nothing is
-   * written.
+   * `options.templateVersion` is written in the same `UPDATE`. `options.expectedVersion` (a token
+   * from `filterNotificationVersions`) joins the `WHERE` too, through `expectedVersionWhere`: a
+   * notification written since then is refused with `NotificationActionError` reason `CHANGED`,
+   * and nothing is written.
    */
   async requeueNotification(
     notificationId: NonNullable<
@@ -1828,7 +1902,6 @@ export class PrismaNotificationBackend<
         `Cannot requeue notification ${String(notificationId)}: templateVersion must be a non-negative integer`,
       );
     }
-    const expectedUpdatedAt = this.expectedUpdatedAt('requeue', notificationId, expectedVersion);
 
     this.logger?.info(log`Requeuing notification ${logId(notificationId)}`);
     let updated: DelegateTypes['notificationModel'];
@@ -1838,13 +1911,16 @@ export class PrismaNotificationBackend<
         where: {
           id: notificationId as Config['NotificationIdType'],
           status: { in: [...REQUEUEABLE_NOTIFICATION_STATUSES] },
-          ...(expectedUpdatedAt === null ? {} : { updatedAt: expectedUpdatedAt }),
+          ...(expectedVersion === undefined
+            ? {}
+            : { AND: [expectedVersionWhere(expectedVersion)] }),
         },
         data: {
           status: NotificationStatusEnum.PENDING_SEND,
           sentAt: null,
           ...('sendAfter' in options ? { sendAfter: options.sendAfter ?? null } : {}),
           ...(templateVersion === undefined ? {} : { requestedTemplateVersion: templateVersion }),
+          notificationVersion: nextVersion(options),
         },
         include: notificationWithAttachmentsInclude,
       });
@@ -1859,7 +1935,7 @@ export class PrismaNotificationBackend<
       if (!existing) {
         throw new Error(`Notification ${String(notificationId)} not found`);
       }
-      this.assertUnchangedSince('requeue', notificationId, existing, expectedUpdatedAt);
+      this.assertUnchangedSince('requeue', notificationId, existing, expectedVersion);
       throw new Error(
         `Cannot requeue notification ${String(notificationId)} in status ${existing.status}`,
       );
@@ -1895,11 +1971,7 @@ export class PrismaNotificationBackend<
         `Cannot repin notification ${String(notificationId)}: templateVersion must be a non-negative integer`,
       );
     }
-    const expectedUpdatedAt = this.expectedUpdatedAt(
-      'repin',
-      notificationId,
-      options.expectedVersion,
-    );
+    const { expectedVersion } = options;
 
     let updated: DelegateTypes['notificationModel'];
     try {
@@ -1907,14 +1979,19 @@ export class PrismaNotificationBackend<
         where: {
           id: notificationId,
           status: { in: [...REPINNABLE_NOTIFICATION_STATUSES] },
-          ...(expectedUpdatedAt === null ? {} : { updatedAt: expectedUpdatedAt }),
+          ...(expectedVersion === undefined
+            ? {}
+            : { AND: [expectedVersionWhere(expectedVersion)] }),
           // `{ not: v }` alone is `<> v`, which no NULL satisfies, so an unpinned row is named too.
           OR: [
             { requestedTemplateVersion: null },
             { requestedTemplateVersion: { not: templateVersion } },
           ],
         },
-        data: { requestedTemplateVersion: templateVersion },
+        data: {
+          requestedTemplateVersion: templateVersion,
+          notificationVersion: nextVersion(options),
+        },
         include: notificationWithAttachmentsInclude,
       });
     } catch (error) {
@@ -1934,7 +2011,7 @@ export class PrismaNotificationBackend<
           message: `Notification ${String(notificationId)} not found`,
         });
       }
-      this.assertUnchangedSince('repin', notificationId, existing, expectedUpdatedAt);
+      this.assertUnchangedSince('repin', notificationId, existing, expectedVersion);
       if (!REPINNABLE_NOTIFICATION_STATUSES.includes(existing.status)) {
         throw new NotificationActionError({
           action: 'repin',
@@ -1965,9 +2042,11 @@ export class PrismaNotificationBackend<
   /**
    * The ID and version token of every notification matching `filter`, ordered by ID.
    *
-   * Selects `id` and `updatedAt` and nothing else, with no `include`, so no recipient, context,
-   * context parameters, rendered content or attachment is read. `version` is `updatedAt` as an ISO
-   * string; pass it as `expectedVersion` to act on the notification only while it is unchanged.
+   * Selects `id`, `notificationVersion` and `updatedAt` and nothing else, with no `include`, so no
+   * recipient, context, context parameters, rendered content or attachment is read. `version` is
+   * the stored token, or the legacy `updatedAt` token for a row that has none yet (see
+   * `effectiveVersion`); pass it as `expectedVersion` to act on the notification only while it is
+   * unchanged.
    */
   async filterNotificationVersions(
     filter: NotificationFilter<Config>,
@@ -1976,45 +2055,31 @@ export class PrismaNotificationBackend<
   ): Promise<NotificationVersion<Config>[]> {
     const rows = (await this.prismaClient.notification.findMany({
       where: this.convertNotificationFilterToPrismaWhere(filter),
-      select: { id: true, updatedAt: true },
+      select: { id: true, notificationVersion: true, updatedAt: true },
       orderBy: { id: 'asc' },
       skip: page * pageSize,
       take: pageSize,
-    })) as unknown as { id: Config['NotificationIdType']; updatedAt: Date }[];
+    })) as unknown as {
+      id: Config['NotificationIdType'];
+      notificationVersion: string | null;
+      updatedAt: Date;
+    }[];
 
-    return rows.map((row) => ({ id: row.id, version: versionToken(row.updatedAt) }));
+    return rows.map((row) => ({ id: row.id, version: effectiveVersion(row) }));
   }
 
   /**
-   * The `updatedAt` an `expectedVersion` names, or `null` when none was given. A token this backend
-   * could not have handed out matches no row, so it is refused with `CHANGED` before any write.
+   * After a conditional `UPDATE` matched nothing, refuse with `CHANGED` when the row is no longer
+   * at the expected version. This only says why; the `UPDATE`'s `WHERE` is what kept the write
+   * from happening.
    */
-  private expectedUpdatedAt(
-    action: 'requeue' | 'repin',
-    notificationId: Config['NotificationIdType'],
-    expectedVersion: string | undefined,
-  ): Date | null {
-    if (expectedVersion === undefined) {
-      return null;
-    }
-    const parsed = parseVersionToken(expectedVersion);
-    if (parsed === null) {
-      throw this.changedError(action, notificationId);
-    }
-    return parsed;
-  }
-
-  /** Refuse with `CHANGED` when the row was written since the expected version. */
   private assertUnchangedSince(
     action: 'requeue' | 'repin',
     notificationId: Config['NotificationIdType'],
-    existing: { updatedAt: Date },
-    expectedUpdatedAt: Date | null,
+    existing: { notificationVersion: string | null; updatedAt: Date },
+    expectedVersion: string | undefined,
   ): void {
-    if (
-      expectedUpdatedAt !== null &&
-      existing.updatedAt.getTime() !== expectedUpdatedAt.getTime()
-    ) {
+    if (expectedVersion !== undefined && effectiveVersion(existing) !== expectedVersion) {
       throw this.changedError(action, notificationId);
     }
   }
@@ -2108,11 +2173,14 @@ export class PrismaNotificationBackend<
     >['id'],
     adapterKey: string,
     context: InputJsonValue,
-  ): Promise<void> {
+    options?: NotificationWriteOptions,
+  ): Promise<NotificationWriteResult> {
+    const notificationVersion = nextVersion(options);
     await this.prismaClient.notification.update({
       where: { id: notificationId as Config['NotificationIdType'] },
-      data: { contextUsed: context, adapterUsed: adapterKey },
+      data: { contextUsed: context, adapterUsed: adapterKey, notificationVersion },
     });
+    return { notificationVersion };
   }
 
   /**
@@ -2141,8 +2209,8 @@ export class PrismaNotificationBackend<
 
   /**
    * Every optional action: re-pin and re-queue are single conditional `UPDATE`s that check
-   * `expectedVersion` against `updatedAt`, re-queue pins in the same `UPDATE`, and
-   * `filterNotificationVersions` selects `id` and `updatedAt` only.
+   * `expectedVersion` against `notificationVersion`, re-queue pins in the same `UPDATE`, and
+   * `filterNotificationVersions` selects `id`, `notificationVersion` and `updatedAt` only.
    */
   getActionCapabilities(): NotificationActionCapabilities {
     return {
@@ -2162,18 +2230,32 @@ export class PrismaNotificationBackend<
   async storeTemplateVersion(
     notificationId: Config['NotificationIdType'],
     templateVersion: number,
-  ): Promise<void> {
+    options?: NotificationWriteOptions,
+  ): Promise<NotificationWriteResult> {
+    const notificationVersion = nextVersion(options);
     await this.prismaClient.notification.update({
       where: { id: notificationId },
-      data: { usedTemplateVersion: templateVersion },
+      data: { usedTemplateVersion: templateVersion, notificationVersion },
     });
+    return { notificationVersion };
   }
 
+  /**
+   * Create every notification in one `INSERT`. `options.notificationVersions` is read by index, so
+   * a replica can be handed the primary's token for some notifications and not others; any left
+   * out gets a new one.
+   */
   async bulkPersistNotifications(
     notifications: Omit<AnyNotification<Config>, 'id'>[],
+    options?: BulkNotificationWriteOptions,
   ): Promise<Config['NotificationIdType'][]> {
     const created = await this.prismaClient.notification.createManyAndReturn({
-      data: notifications.map((notification) => this.deserializeNotification(notification)),
+      data: notifications.map((notification, index) => ({
+        ...this.deserializeNotification(notification),
+        notificationVersion: nextVersion({
+          notificationVersion: options?.notificationVersions?.[index],
+        }),
+      })),
     });
     return created.map((n) => n.id);
   }
